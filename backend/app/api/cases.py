@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
+from app.agents.workflow import AnalysisWorkflowError, latest_analysis_result, run_analysis_workflow
+from app.models.analysis import AnalysisResult
 from app.storage import Case, Document, JsonRepository, repository
 
 ALLOWED_UPLOAD_EXTENSIONS = {".md", ".pdf", ".txt"}
@@ -232,3 +234,38 @@ def list_case_documents(
 ) -> list[DocumentResponse]:
     _require_case(repo, case_id)
     return [_document_response(document) for document in repo.list_documents(case_id)]
+
+
+@router.post("/{case_id}/analyze", response_model=AnalysisResult)
+def analyze_case(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> AnalysisResult:
+    try:
+        return run_analysis_workflow(case_id, repo=repo)
+    except AnalysisWorkflowError as exc:
+        if exc.code == "case_not_found":
+            raise _api_error(status.HTTP_404_NOT_FOUND, exc.code, exc.message) from exc
+        if exc.code == "no_documents":
+            raise _api_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message) from exc
+        raise _api_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            exc.code,
+            "Analysis could not be completed.",
+        ) from exc
+
+
+@router.get("/{case_id}/analysis", response_model=AnalysisResult)
+def get_case_analysis(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> AnalysisResult:
+    _require_case(repo, case_id)
+    result = latest_analysis_result(case_id, repo=repo)
+    if result is None:
+        raise _api_error(
+            status.HTTP_404_NOT_FOUND,
+            "analysis_not_found",
+            f"No saved analysis exists for case '{case_id}'.",
+        )
+    return result

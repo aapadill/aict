@@ -126,3 +126,73 @@ def test_upload_to_missing_case_returns_404(
 
     assert response.status_code == 404
     assert response.json()["detail"]["error"] == "case_not_found"
+
+
+def test_analyze_case_and_get_latest_analysis(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "Hiring assistant"}).json()["id"]
+    client.post(
+        f"/cases/{case_id}/documents",
+        files=[
+            (
+                "files",
+                (
+                    "brief.txt",
+                    b"The AI system ranks candidates for employment. Recruiters review recommendations.",
+                    "text/plain",
+                ),
+            )
+        ],
+    )
+
+    analyze_response = client.post(f"/cases/{case_id}/analyze")
+
+    assert analyze_response.status_code == 200
+    result = analyze_response.json()
+    assert result["case_id"] == case_id
+    assert result["extracted_facts"]
+    assert result["risk_classification"]
+    assert result["follow_up_questions"]
+    assert result["agent_trace"][-1]["agent"] == "CriticUncertaintyAgent"
+    assert all(citation["verified"] is True for citation in result["citations"])
+
+    latest_response = client.get(f"/cases/{case_id}/analysis")
+    assert latest_response.status_code == 200
+    assert latest_response.json() == result
+
+
+def test_analyze_missing_case_returns_404(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+
+    response = client.post("/cases/case_missing/analyze")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "case_not_found"
+
+
+def test_analyze_without_documents_returns_400(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "Empty case"}).json()["id"]
+
+    response = client.post(f"/cases/{case_id}/analyze")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "no_documents"
+
+
+def test_get_analysis_without_saved_result_returns_404(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "No analysis yet"}).json()["id"]
+
+    response = client.get(f"/cases/{case_id}/analysis")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "analysis_not_found"
