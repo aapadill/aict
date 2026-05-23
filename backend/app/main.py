@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.cases import router as cases_router
 from app.api.health import router as health_router
 from app.core.config import settings
 from app.storage import initialize_storage
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(cases_router)
     return app
 
 

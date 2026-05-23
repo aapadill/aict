@@ -88,8 +88,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _new_id() -> str:
-    return str(uuid.uuid4())
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
 
 
 def _normalize_text(text: str) -> str:
@@ -170,7 +170,7 @@ class JsonRepository:
     def create_case(self, title: str, description: str | None) -> Case:
         timestamp = _now()
         case = Case(
-            id=_new_id(),
+            id=_new_id("case"),
             title=title,
             description=description,
             createdat=timestamp,
@@ -204,7 +204,7 @@ class JsonRepository:
         (self.extracted_dir / safe_case_id).mkdir(parents=True, exist_ok=True)
 
         document = Document(
-            id=document_id or _new_id(),
+            id=document_id or _new_id("doc"),
             caseid=case_id,
             filename=filename,
             contenttype=content_type or "application/octet-stream",
@@ -234,7 +234,7 @@ class JsonRepository:
             metadata = {"value": metadata}
 
         saved_chunk = Chunk(
-            id=str(_get(chunk, "id", default=_new_id())),
+            id=str(_get(chunk, "id", default=_new_id("chunk"))),
             caseid=case_id,
             sourceid=_get(chunk, "sourceid", "source_id"),
             sourcetype=str(_get(chunk, "sourcetype", "source_type", default="uploaded_document")),
@@ -276,7 +276,7 @@ class JsonRepository:
     ) -> Analysis:
         timestamp = _now()
         analysis = Analysis(
-            id=_new_id(),
+            id=_new_id("analysis"),
             caseid=case_id,
             status=status,
             result=result,
@@ -299,7 +299,7 @@ class JsonRepository:
         self, case_id: str, role: str, content: str, citations: list[dict[str, Any]]
     ) -> Message:
         message = Message(
-            id=_new_id(),
+            id=_new_id("msg"),
             caseid=case_id,
             role=role,
             content=content,
@@ -322,7 +322,7 @@ class JsonRepository:
             metadata = {"value": metadata}
 
         saved_evidence = Evidence(
-            id=str(_get(evidence, "id", default=_new_id())),
+            id=str(_get(evidence, "id", default=_new_id("evidence"))),
             caseid=case_id,
             sourcetype=str(
                 _get(evidence, "sourcetype", "source_type", default="uploaded_document")
