@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import threading
 import uuid
@@ -188,6 +189,71 @@ class JsonRepository:
 
     def get_case(self, case_id: str) -> Case | None:
         return next((case for case in self.list_cases() if case.id == case_id), None)
+
+    def update_case(
+        self,
+        case_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+    ) -> Case | None:
+        with self._lock:
+            cases = self._read_models(self.cases_path, Case)
+            updated_case: Case | None = None
+            updated_cases: list[Case] = []
+
+            for case in cases:
+                if case.id != case_id:
+                    updated_cases.append(case)
+                    continue
+
+                updated_case = Case(
+                    id=case.id,
+                    title=title if title is not None else case.title,
+                    description=description if description is not None else case.description,
+                    createdat=case.createdat,
+                    updatedat=_now(),
+                )
+                updated_cases.append(updated_case)
+
+            if updated_case is None:
+                return None
+
+            self._write_models(self.cases_path, updated_cases)
+            return updated_case
+
+    def delete_case(self, case_id: str) -> bool:
+        safe_case_id = _safe_case_id(case_id)
+        with self._lock:
+            cases = self._read_models(self.cases_path, Case)
+            kept_cases = [case for case in cases if case.id != case_id]
+            if len(kept_cases) == len(cases):
+                return False
+
+            documents = [
+                document
+                for document in self._read_models(self.documents_path, Document)
+                if document.caseid != case_id
+            ]
+            self._write_models(self.cases_path, kept_cases)
+            self._write_models(self.documents_path, documents)
+
+            for directory in (
+                self.chunks_dir,
+                self.analyses_dir,
+                self.messages_dir,
+                self.evidence_dir,
+            ):
+                state_path = directory / f"{safe_case_id}.json"
+                try:
+                    state_path.unlink()
+                except FileNotFoundError:
+                    pass
+
+            for directory in (self.upload_dir, self.extracted_dir, self.index_dir):
+                shutil.rmtree(directory / safe_case_id, ignore_errors=True)
+
+            return True
 
     def save_document(
         self,
@@ -444,6 +510,19 @@ def list_cases() -> list[Case]:
 
 def get_case(case_id: str) -> Case | None:
     return repository.get_case(case_id)
+
+
+def update_case(
+    case_id: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+) -> Case | None:
+    return repository.update_case(case_id, title=title, description=description)
+
+
+def delete_case(case_id: str) -> bool:
+    return repository.delete_case(case_id)
 
 
 def save_document(

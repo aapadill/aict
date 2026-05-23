@@ -14,9 +14,9 @@ def create_app() -> FastAPI:
     initialize_storage()
 
     app = FastAPI(
-        title="AI Act Compliance Assistant",
+        title="aict",
         description=(
-            "Local-first backend for running a cited first-pass EU AI Act assessment. "
+            "Local-first backend for aict, an EU AI Act compliance workspace. "
             "Output is decision support, not final legal advice."
         ),
         version="0.1.0",

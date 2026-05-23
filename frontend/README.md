@@ -1,6 +1,6 @@
-# AI Act Compliance Assistant — Frontend
+# aict — Frontend
 
-Vite + React + TypeScript frontend for the AI Act Compliance Assistant.
+Vite + React + TypeScript frontend for aict, an EU AI Act compliance workspace.
 
 ## Setup
 

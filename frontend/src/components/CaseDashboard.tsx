@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createCase, listCases } from "../api/client";
+import { createCase, deleteCase, listCases } from "../api/client";
 import type { Case } from "../types/api";
 import EmptyState from "./EmptyState";
 import LoadingButton from "./LoadingButton";
@@ -8,8 +8,8 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
   const [cases, setCases] = useState<Case[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const load = async () => {
     setError(null);
@@ -26,15 +26,11 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
     load();
   }, []);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
+  const startNewCase = async () => {
     setCreating(true);
     setError(null);
     try {
-      const c = await createCase({ title: title.trim(), description: description.trim() || undefined });
-      setTitle("");
-      setDescription("");
+      const c = await createCase({ title: "New AI Act review" });
       await load();
       onOpen(c.id);
     } catch (e: any) {
@@ -44,17 +40,36 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
     }
   };
 
+  const removeCase = async (caseRecord: Case) => {
+    setDeletingCaseId(caseRecord.id);
+    setError(null);
+    try {
+      await deleteCase(caseRecord.id);
+      setCases((current) => current?.filter((item) => item.id !== caseRecord.id) ?? []);
+      setConfirmingDeleteId(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to remove case");
+    } finally {
+      setDeletingCaseId(null);
+    }
+  };
+
   return (
     <div className="dashboard-layout">
       <section className="dashboard-main panel">
         <div className="section-head">
           <div>
-            <h2>Cases</h2>
+            <h2>Cases board</h2>
             <p>{cases?.length ?? 0} local review{(cases?.length ?? 0) === 1 ? "" : "s"}</p>
           </div>
-          <button className="primary compact" onClick={() => document.getElementById("case-title")?.focus()}>
+          <LoadingButton
+            className="primary compact"
+            loading={creating}
+            loadingText="Starting…"
+            onClick={startNewCase}
+          >
             New case
-          </button>
+          </LoadingButton>
         </div>
 
         {error && <div className="error-banner">{error}</div>}
@@ -66,54 +81,68 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
             title="No cases yet"
             hint="Create your first case to start a compliance review."
             action={
-              <button className="primary" onClick={() => document.getElementById("case-title")?.focus()}>
+              <LoadingButton
+                className="primary"
+                loading={creating}
+                loadingText="Starting…"
+                onClick={startNewCase}
+              >
                 New case
-              </button>
+              </LoadingButton>
             }
           />
         ) : (
           <div className="case-grid">
             {cases.map((c) => (
-              <button key={c.id} className="case-item" onClick={() => onOpen(c.id)}>
-                <div className="title">{c.title}</div>
-                {c.description && <div className="small muted line-clamp">{c.description}</div>}
-                <div className="meta">
-                  <span>Updated {new Date(c.updated_at).toLocaleString()}</span>
-                  <span>Open</span>
-                </div>
-              </button>
+              <article key={c.id} className="case-item">
+                <button
+                  className="case-delete"
+                  onClick={() => {
+                    setError(null);
+                    setConfirmingDeleteId(c.id);
+                  }}
+                  disabled={deletingCaseId !== null}
+                  aria-label={`Remove ${c.title}`}
+                  title={`Remove ${c.title}`}
+                >
+                  -
+                </button>
+                <button className="case-open" onClick={() => onOpen(c.id)}>
+                  <div className="title">{c.title}</div>
+                  {c.description && <div className="small muted line-clamp">{c.description}</div>}
+                  <div className="meta">
+                    <span>Updated {new Date(c.updated_at).toLocaleString()}</span>
+                    <span>Open</span>
+                  </div>
+                </button>
+                {confirmingDeleteId === c.id && (
+                  <div className="case-confirm" role="dialog" aria-label={`Confirm removal of ${c.title}`}>
+                    <div className="confirm-title">Remove case?</div>
+                    <p>This deletes the local case, report, and uploaded files.</p>
+                    <div className="confirm-actions">
+                      <button
+                        className="ghost compact"
+                        onClick={() => setConfirmingDeleteId(null)}
+                        disabled={deletingCaseId === c.id}
+                      >
+                        Cancel
+                      </button>
+                      <LoadingButton
+                        className="compact confirm-danger"
+                        loading={deletingCaseId === c.id}
+                        loadingText="Deleting..."
+                        onClick={() => removeCase(c)}
+                      >
+                        Delete
+                      </LoadingButton>
+                    </div>
+                  </div>
+                )}
+              </article>
             ))}
           </div>
         )}
       </section>
-
-      <aside className="dashboard-side panel">
-        <h2>New case</h2>
-        <form onSubmit={submit} className="form-stack">
-          <div>
-            <label htmlFor="case-title">Title</label>
-            <input
-              id="case-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Recruitment ranking model"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="case-description">Description</label>
-            <textarea
-              id="case-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Brief description of the AI system or use case."
-            />
-          </div>
-          <LoadingButton type="submit" className="primary full" loading={creating} loadingText="Creating…">
-            Create case
-          </LoadingButton>
-        </form>
-      </aside>
     </div>
   );
 }

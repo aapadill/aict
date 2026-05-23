@@ -1,5 +1,5 @@
 [project]
-name = "ai-act-compliance-assistant-backend"
+name = "aict-backend"
 version = "0.1.0"
 description = "Local-first FastAPI backend for first-pass EU AI Act assessments."
 requires-python = ">=3.12"

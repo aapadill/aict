@@ -3,7 +3,15 @@ import type { AnalysisResult, AssessmentSection, Citation, ExtractedFact } from 
 import EvidencePanel, { CitationItem } from "./EvidencePanel";
 import AgentTrace from "./AgentTrace";
 
-function SectionView({ s }: { s: AssessmentSection }) {
+function SectionView({
+  s,
+  selectedCitationId,
+  onOpenCitation,
+}: {
+  s: AssessmentSection;
+  selectedCitationId?: string;
+  onOpenCitation: (citation: Citation) => void;
+}) {
   return (
     <div className={`assessment ${s.confidence}`}>
       <div className="head">
@@ -28,7 +36,15 @@ function SectionView({ s }: { s: AssessmentSection }) {
         <div className="sub">
           <strong>Citations:</strong>
           <div style={{ marginTop: 4 }}>
-            {s.citations.map((c) => <CitationItem key={c.id} c={c} />)}
+            {s.citations.map((c) => (
+              <button
+                key={c.id}
+                className={`citation-preview-button ${selectedCitationId === c.id ? "active" : ""}`}
+                onClick={() => onOpenCitation(c)}
+              >
+                <CitationItem c={c} />
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -156,13 +172,20 @@ export default function AnalysisReport({
   const tone = riskTone(a.risk_classification.conclusion);
   const label = riskLabel(a.risk_classification.conclusion);
   const supportedFacts = a.extracted_facts.filter((f) => f.status !== "missing" && f.citations.length > 0);
-  const factCitations = supportedFacts.flatMap((f) => f.citations);
-  const firstFactCitation = factCitations[0] ?? null;
+  const allCitations = [
+    ...supportedFacts.flatMap((f) => f.citations),
+    ...a.ai_system_assessment.citations,
+    ...a.risk_classification.citations,
+    ...a.obligations.flatMap((section) => section.citations),
+    ...a.governance_observations.flatMap((section) => section.citations),
+    ...a.citations,
+  ];
+  const firstCitation = allCitations[0] ?? null;
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const citationPreview =
-    selectedCitation && factCitations.some((c) => c.id === selectedCitation.id)
+    selectedCitation && allCitations.some((c) => c.id === selectedCitation.id)
       ? selectedCitation
-      : firstFactCitation;
+      : firstCitation;
 
   return (
     <div className="report-stack">
@@ -239,12 +262,20 @@ export default function AnalysisReport({
 
       <div className="panel">
         <h2>AI-system definition assessment</h2>
-        <SectionView s={a.ai_system_assessment} />
+        <SectionView
+          s={a.ai_system_assessment}
+          selectedCitationId={citationPreview?.id}
+          onOpenCitation={setSelectedCitation}
+        />
       </div>
 
       <div className="panel">
         <h2>Preliminary risk classification</h2>
-        <SectionView s={a.risk_classification} />
+        <SectionView
+          s={a.risk_classification}
+          selectedCitationId={citationPreview?.id}
+          onOpenCitation={setSelectedCitation}
+        />
       </div>
 
       <div className="panel">
@@ -252,7 +283,14 @@ export default function AnalysisReport({
         {a.obligations.length === 0 ? (
           <div className="muted small">None identified.</div>
         ) : (
-          a.obligations.map((o, i) => <SectionView key={i} s={o} />)
+          a.obligations.map((o, i) => (
+            <SectionView
+              key={i}
+              s={o}
+              selectedCitationId={citationPreview?.id}
+              onOpenCitation={setSelectedCitation}
+            />
+          ))
         )}
       </div>
 
@@ -261,7 +299,14 @@ export default function AnalysisReport({
         {a.governance_observations.length === 0 ? (
           <div className="muted small">None.</div>
         ) : (
-          a.governance_observations.map((o, i) => <SectionView key={i} s={o} />)
+          a.governance_observations.map((o, i) => (
+            <SectionView
+              key={i}
+              s={o}
+              selectedCitationId={citationPreview?.id}
+              onOpenCitation={setSelectedCitation}
+            />
+          ))
         )}
       </div>
 

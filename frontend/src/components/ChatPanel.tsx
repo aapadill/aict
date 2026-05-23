@@ -8,9 +8,11 @@ import { CitationItem } from "./EvidencePanel";
 export default function ChatPanel({
   caseId,
   onReassessRequested,
+  reassessing = false,
 }: {
   caseId: string;
-  onReassessRequested: () => void;
+  onReassessRequested: () => void | Promise<void>;
+  reassessing?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [input, setInput] = useState("");
@@ -67,6 +69,18 @@ export default function ChatPanel({
     }
   };
 
+  const runReassessment = async () => {
+    setError(null);
+    try {
+      await onReassessRequested();
+      setLastResponse(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Reanalysis failed");
+    }
+  };
+
+  const canSend = Boolean(input.trim()) && !sending;
+
   return (
     <div className="panel chat-panel">
       <div className="section-head">
@@ -112,7 +126,14 @@ export default function ChatPanel({
           {lastResponse.reassessment_recommended && (
             <div className="row between" style={{ marginTop: 8 }}>
               <span className="small"><strong>Reassessment recommended</strong> based on the latest exchange.</span>
-              <button className="primary" onClick={onReassessRequested}>Run analysis again</button>
+              <LoadingButton
+                className="primary"
+                loading={reassessing}
+                loadingText="Analyzing…"
+                onClick={runReassessment}
+              >
+                Update report
+              </LoadingButton>
             </div>
           )}
         </div>
@@ -130,7 +151,13 @@ export default function ChatPanel({
             }
           }}
         />
-        <LoadingButton className="primary" loading={sending} loadingText="Sending…" onClick={send}>
+        <LoadingButton
+          className="primary"
+          loading={sending}
+          loadingText="Sending…"
+          onClick={send}
+          disabled={!canSend}
+        >
           Send
         </LoadingButton>
       </div>

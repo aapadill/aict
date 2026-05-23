@@ -4,6 +4,7 @@ import {
   getCase,
   listDocuments,
   runAnalysis,
+  updateCase,
 } from "../api/client";
 import type { AnalysisResult, Case, DocumentRecord } from "../types/api";
 import DocumentUploader from "./DocumentUploader";
@@ -38,6 +39,8 @@ export default function CaseWorkspace({
   const [copying, setCopying] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [caseDescription, setCaseDescription] = useState("");
+  const [savingCase, setSavingCase] = useState(false);
 
   const loadAll = async () => {
     setError(null);
@@ -45,6 +48,7 @@ export default function CaseWorkspace({
     try {
       const c = await getCase(caseId);
       setCaseData(c);
+      setCaseDescription(c.description ?? "");
       if (c.documents) setDocuments(c.documents);
       else {
         const docs = await listDocuments(caseId);
@@ -75,12 +79,55 @@ export default function CaseWorkspace({
      
   }, [caseId]);
 
+  useEffect(() => {
+    if (!analysis && tab === "chat") {
+      setTab("report");
+    }
+  }, [analysis, tab]);
+
+  const persistCaseDescription = async () => {
+    if (!caseData || caseDescription.trim() === (caseData.description ?? "")) return caseData;
+    setSavingCase(true);
+    try {
+      const updated = await updateCase(caseId, { description: caseDescription.trim() });
+      setCaseData(updated);
+      return updated;
+    } finally {
+      setSavingCase(false);
+    }
+  };
+
+  const generatedTitle = (a: AnalysisResult): string => {
+    const factTitle = a.extracted_facts.find((fact) => fact.label === "Purpose")?.value;
+    const source = factTitle || a.summary || "AI Act review";
+    const compact = source
+      .replace(/^likely purpose:\s*/i, "")
+      .replace(/^the\s+/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!compact) return "AI Act review";
+    return compact.length > 72 ? `${compact.slice(0, 69).replace(/[ ,;:]+$/, "")}...` : compact;
+  };
+
+  const handleSaveDescription = async () => {
+    setError(null);
+    try {
+      await persistCaseDescription();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to save description");
+    }
+  };
+
   const handleRunAnalysis = async () => {
     setRunning(true);
     setError(null);
     try {
+      await persistCaseDescription();
       const a = await runAnalysis(caseId);
       setAnalysis(a);
+      const nextTitle = generatedTitle(a);
+      const updated = await updateCase(caseId, { title: nextTitle });
+      setCaseData(updated);
       setTab("report");
     } catch (e: any) {
       setError(e?.message ?? "Analysis failed");
@@ -94,7 +141,20 @@ export default function CaseWorkspace({
     setCopying(true);
     try {
       const md = buildMarkdownReport(analysis, caseData?.title);
-      await navigator.clipboard.writeText(md);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(md);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = md;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error("Clipboard API is unavailable");
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch (e: any) {
@@ -110,14 +170,52 @@ export default function CaseWorkspace({
     try {
       const md = buildMarkdownReport(analysis, caseData?.title);
       downloadMarkdown(`ai-act-assessment-${caseId}.md`, md);
+    } catch (e: any) {
+      setError(e?.message ?? "Download failed");
     } finally {
       setExporting(false);
     }
   };
 
+  const handleUploaded = (newDocs: DocumentRecord[]) => {
+    if (analysis) return;
+    setDocuments((current) => {
+      const existing = new Set(current.map((doc) => doc.id));
+      return [
+        ...current,
+        ...newDocs.filter((doc) => !existing.has(doc.id)),
+      ];
+    });
+    setAnalysis(null);
+  };
+
+  const handleReassessFromChat = async () => {
+    await handleRunAnalysis();
+    setTab("report");
+  };
+
+  const intakeLocked = Boolean(analysis);
+  const savedDescription = caseData?.description?.trim() ?? "";
+  const currentDescription = caseDescription.trim();
+  const descriptionChanged = currentDescription !== savedDescription;
+  const descriptionReady = Boolean(savedDescription) && !descriptionChanged;
+  const canSaveDescription = !intakeLocked && Boolean(currentDescription) && descriptionChanged;
+  const descriptionActionLabel = intakeLocked
+    ? "Locked"
+    : "Save";
+  const descriptionStatus = savingCase
+    ? "Saving..."
+    : intakeLocked
+      ? "Locked after analysis."
+      : descriptionReady
+        ? "Description saved. You can edit it before analysis."
+        : "Describe the system before adding files.";
+  const readyForAnalysis = documents.length > 0 && descriptionReady;
+  const headerDescription = analysis ? caseData?.description : null;
+
   const tabItems: { id: Tab; label: string; meta: string }[] = [
     { id: "report", label: TAB_LABELS.report, meta: analysis ? "Ready" : "Draft" },
-    { id: "chat", label: TAB_LABELS.chat, meta: "Ask" },
+    { id: "chat", label: TAB_LABELS.chat, meta: analysis ? "Ask" : "Locked" },
   ];
 
   if (loadingCase && !caseData) {
@@ -140,7 +238,7 @@ export default function CaseWorkspace({
           <div className="title-block">
             <div className="eyebrow">Compliance review</div>
             <h1>{caseData.title}</h1>
-            {caseData.description && <p>{caseData.description}</p>}
+            {headerDescription && <p>{headerDescription}</p>}
             <div className="workspace-meta">
               <span>Created {new Date(caseData.created_at).toLocaleString()}</span>
               <span>{documents.length} document{documents.length === 1 ? "" : "s"}</span>
@@ -150,16 +248,6 @@ export default function CaseWorkspace({
             </div>
           </div>
           <div className="actions">
-            <LoadingButton
-              className="primary"
-              loading={running}
-              loadingText="Analyzing…"
-              onClick={handleRunAnalysis}
-              disabled={documents.length === 0}
-              title={documents.length === 0 ? "Upload at least one document first" : "Run AI Act analysis"}
-            >
-              Run analysis
-            </LoadingButton>
             <LoadingButton
               loading={copying}
               loadingText="Copying…"
@@ -184,10 +272,37 @@ export default function CaseWorkspace({
 
       <div className="workspace-grid">
         <aside className="workspace-rail">
+          {!intakeLocked && (
+            <div className="panel intake-panel">
+              <div className="section-head compact-head">
+                <div>
+                  <h2>Use-case description</h2>
+                  <p>{descriptionStatus}</p>
+                </div>
+              </div>
+              <textarea
+                value={caseDescription}
+                onChange={(event) => setCaseDescription(event.target.value)}
+                placeholder="Example: An AI assistant screens job applications, summarizes CVs, ranks candidates, and supports recruiter review."
+              />
+              <div className="intake-actions">
+                <LoadingButton
+                  className="compact"
+                  loading={savingCase}
+                  loadingText="Saving..."
+                  onClick={handleSaveDescription}
+                  disabled={!canSaveDescription}
+                >
+                  {descriptionActionLabel}
+                </LoadingButton>
+              </div>
+            </div>
+          )}
           <DocumentUploader
             caseId={caseId}
             documents={documents}
-            onUploaded={(newDocs) => setDocuments((d) => [...d, ...newDocs])}
+            onUploaded={handleUploaded}
+            locked={intakeLocked}
           />
           <div className="panel case-summary">
             <h2>Case status</h2>
@@ -217,6 +332,7 @@ export default function CaseWorkspace({
                 key={item.id}
                 role="tab"
                 aria-selected={tab === item.id}
+                disabled={item.id === "chat" && !analysis}
                 className={tab === item.id ? "active" : ""}
                 onClick={() => setTab(item.id)}
               >
@@ -236,16 +352,18 @@ export default function CaseWorkspace({
                 <EmptyState
                   icon="◷"
                   title="No analysis yet"
-                  hint={documents.length === 0
-                    ? "Upload at least one document, then run analysis."
-                    : "Click Run analysis to generate an AI Act assessment."}
+                  hint={!descriptionReady
+                    ? "Add the use-case description, upload at least one document, then run analysis."
+                    : documents.length === 0
+                      ? "Upload at least one document, then run analysis."
+                      : "Click Run analysis to generate an AI Act assessment."}
                   action={
                     <LoadingButton
                       className="primary"
                       loading={running}
                       loadingText="Analyzing…"
                       onClick={handleRunAnalysis}
-                      disabled={documents.length === 0}
+                      disabled={!readyForAnalysis}
                     >
                       Run analysis
                     </LoadingButton>
@@ -255,7 +373,11 @@ export default function CaseWorkspace({
             )}
 
             {tab === "chat" && (
-              <ChatPanel caseId={caseId} onReassessRequested={handleRunAnalysis} />
+              <ChatPanel
+                caseId={caseId}
+                reassessing={running}
+                onReassessRequested={handleReassessFromChat}
+              />
             )}
           </div>
         </section>

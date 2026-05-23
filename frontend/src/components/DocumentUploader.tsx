@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { uploadDocuments } from "../api/client";
 import type { DocumentRecord } from "../types/api";
 import LoadingButton from "./LoadingButton";
@@ -10,10 +10,12 @@ export default function DocumentUploader({
   caseId,
   documents,
   onUploaded,
+  locked = false,
 }: {
   caseId: string;
   documents: DocumentRecord[];
   onUploaded: (docs: DocumentRecord[]) => void;
+  locked?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,15 @@ export default function DocumentUploader({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (locked) {
+      setPendingFiles([]);
+      setDragover(false);
+    }
+  }, [locked]);
+
   const addFiles = (files: File[]) => {
+    if (locked) return;
     const allowed = files.filter((f) => /\.(pdf|txt|md|markdown)$/i.test(f.name));
     if (!allowed.length) {
       setError("Only PDF, TXT, or Markdown files are supported.");
@@ -46,6 +56,7 @@ export default function DocumentUploader({
   };
 
   const uploadPendingFiles = async () => {
+    if (locked) return;
     if (!pendingFiles.length) {
       inputRef.current?.click();
       return;
@@ -68,41 +79,55 @@ export default function DocumentUploader({
       <div className="section-head compact-head">
         <div>
           <h2>Documents</h2>
-          <p>{documents.length} file{documents.length === 1 ? "" : "s"} in this case</p>
+          <p>
+            {locked
+              ? "Files are locked after analysis."
+              : `${documents.length} file${documents.length === 1 ? "" : "s"} in this case`}
+          </p>
         </div>
         <LoadingButton
           loading={uploading}
           loadingText="Uploading…"
-          onClick={() => inputRef.current?.click()}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (locked) return;
+            inputRef.current?.click();
+          }}
           className="compact"
+          disabled={locked}
         >
-          Add files
+          {locked ? "Locked" : "Add files"}
         </LoadingButton>
         <input
           ref={inputRef}
           type="file"
           multiple
           accept={ACCEPT}
+          disabled={locked}
           style={{ display: "none" }}
           onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))}
         />
       </div>
 
       <div
-        className={`dropzone ${dragover ? "dragover" : ""}`}
-        onClick={() => !uploading && inputRef.current?.click()}
+        className={`dropzone ${dragover ? "dragover" : ""} ${locked ? "locked" : ""}`}
+        onClick={() => !locked && !uploading && inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
+          if (locked) return;
           setDragover(true);
         }}
         onDragLeave={() => setDragover(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDragover(false);
+          if (locked) return;
           addFiles(Array.from(e.dataTransfer.files));
         }}
       >
-        {uploading ? (
+        {locked ? (
+          <>Document intake is locked because this case already has an assessment.</>
+        ) : uploading ? (
           <><span className="spinner" /> Uploading…</>
         ) : (
           <>Drop PDF, TXT, or Markdown files here, or click to choose.</>
@@ -122,7 +147,11 @@ export default function DocumentUploader({
               className="primary compact"
               loading={uploading}
               loadingText="Uploading…"
-              onClick={uploadPendingFiles}
+              onClick={(event) => {
+                event.stopPropagation();
+                uploadPendingFiles();
+              }}
+              disabled={locked}
             >
               Upload selected
             </LoadingButton>
@@ -134,7 +163,10 @@ export default function DocumentUploader({
                 <span className="name">{file.name}</span>
                 <button
                   className="ghost compact remove-file"
-                  onClick={() => removePendingFile(fileKey(file))}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removePendingFile(fileKey(file));
+                  }}
                   disabled={uploading}
                   title={`Remove ${file.name}`}
                 >

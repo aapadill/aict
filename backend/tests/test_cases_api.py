@@ -48,6 +48,58 @@ def test_create_list_and_get_case(client_and_repo: tuple[TestClient, JsonReposit
     assert get_response.json() == {**created, "documents": []}
 
 
+def test_update_case_title_and_description(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "Untitled review"}).json()["id"]
+
+    response = client.patch(
+        f"/cases/{case_id}",
+        json={
+            "title": "Recruiting assistant",
+            "description": "Screens CVs and ranks candidates for recruiter review.",
+        },
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["title"] == "Recruiting assistant"
+    assert updated["description"] == "Screens CVs and ranks candidates for recruiter review."
+
+    detail = client.get(f"/cases/{case_id}").json()
+    assert detail["title"] == "Recruiting assistant"
+    assert detail["description"] == "Screens CVs and ranks candidates for recruiter review."
+
+
+def test_delete_case_removes_case_documents_and_local_state(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "Delete me"}).json()["id"]
+    upload_response = client.post(
+        f"/cases/{case_id}/documents",
+        files=[("files", ("brief.txt", b"Temporary content.", "text/plain"))],
+    )
+    uploaded_file = Path(upload_response.json()[0]["file_path"])
+    repo.save_analysis(case_id=case_id, result={"case_id": case_id}, status="complete")
+    repo.save_message(case_id=case_id, role="user", content="hello", citations=[])
+
+    response = client.delete(f"/cases/{case_id}")
+
+    assert response.status_code == 204
+    assert repo.get_case(case_id) is None
+    assert repo.list_documents(case_id) == []
+    assert repo.get_latest_analysis(case_id) is None
+    assert repo.list_messages(case_id) == []
+    assert not uploaded_file.exists()
+    assert not (repo.upload_dir / case_id).exists()
+
+    missing_response = client.get(f"/cases/{case_id}")
+    assert missing_response.status_code == 404
+    assert missing_response.json()["detail"]["error"] == "case_not_found"
+
+
 def test_upload_multiple_documents_to_case(
     client_and_repo: tuple[TestClient, JsonRepository],
 ) -> None:
@@ -161,6 +213,61 @@ def test_analyze_case_and_get_latest_analysis(
     latest_response = client.get(f"/cases/{case_id}/analysis")
     assert latest_response.status_code == 200
     assert latest_response.json() == result
+
+
+def test_uploads_are_locked_after_analysis(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = _create_analyzed_case(client)
+
+    response = client.post(
+        f"/cases/{case_id}/documents",
+        files=[("files", ("late.txt", b"New facts after analysis.", "text/plain"))],
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "case_locked"
+    assert len(repo.list_documents(case_id)) == 1
+
+
+def test_description_is_locked_after_analysis_but_title_can_update(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post(
+        "/cases",
+        json={"title": "Hiring assistant", "description": "Original use case."},
+    ).json()["id"]
+    client.post(
+        f"/cases/{case_id}/documents",
+        files=[
+            (
+                "files",
+                (
+                    "brief.txt",
+                    b"The AI system ranks candidates for employment. Recruiters review recommendations.",
+                    "text/plain",
+                ),
+            )
+        ],
+    )
+    assert client.post(f"/cases/{case_id}/analyze").status_code == 200
+
+    description_response = client.patch(
+        f"/cases/{case_id}",
+        json={"description": "Changed after analysis."},
+    )
+    assert description_response.status_code == 409
+    assert description_response.json()["detail"]["error"] == "case_locked"
+
+    title_response = client.patch(
+        f"/cases/{case_id}",
+        json={"title": "Generated report title"},
+    )
+    assert title_response.status_code == 200
+    assert title_response.json()["title"] == "Generated report title"
+    assert title_response.json()["description"] == "Original use case."
 
 
 def test_analyze_missing_case_returns_404(

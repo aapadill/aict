@@ -13,11 +13,13 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand-block">
-          <div className="brand-mark">AI</div>
+          <div className="brand-mark">§</div>
           <div>
-            <h1>AI Act Compliance Assistant</h1>
+            <h1>aict</h1>
             <span className="crumbs">
-              {openCaseId ? <>Case <span className="mono">{openCaseId}</span></> : "Cases"}
+              {openCaseId
+                ? <>Case <span className="mono">{openCaseId}</span></>
+                : "EU AI Act compliance workspace"}
             </span>
           </div>
         </div>

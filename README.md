@@ -1,6 +1,6 @@
-# AI Act Compliance Assistant
+# aict
 
-Hackathon MVP for a local-first assistant that helps a user run a cited first-pass EU AI Act assessment for one AI use case.
+aict is a hackathon MVP for a local-first EU AI Act compliance workspace that helps a user run a cited first-pass assessment for one AI use case.
 
 The product goal is narrow: create one case, upload supporting documents, extract and retrieve relevant evidence, generate a structured assessment with citations, and ask follow-up questions against the saved case context. The result is decision support for an internal review conversation, not a production legal determination.
 
