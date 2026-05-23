@@ -1,6 +1,6 @@
 # AI Act Compliance Assistant - Hackathon Tickets
 
-These tickets are written so each one can be pasted into a coding agent as a standalone implementation prompt. Backend/local integration work is timeboxed for the hackathon; the frontend is consolidated into one external Lovable prompt that should return a downloadable `frontend/` folder.
+These tickets are written so each one can be pasted into a coding agent as a standalone implementation prompt. Backend/local integration work is timeboxed for the hackathon; the frontend was consolidated into one external Lovable prompt and is now expected to live in the repo as `frontend/`.
 
 ## Global Build Assumptions
 
@@ -10,6 +10,8 @@ These tickets are written so each one can be pasted into a coding agent as a sta
 - Suggested backend: Python + FastAPI.
 - Suggested storage: local JSON repository for app state, local filesystem for uploads/extracted text, local vector/lexical retrieval for document chunks.
 - Suggested agent style: stateful graph or orchestrator with named agents and shared JSON state.
+- Suggested runtime: Docker Compose from the repo root, with `make up` as the default demo command and manual backend/frontend commands reserved for debugging.
+- Backend packaging: `backend/pyproject.toml`; install locally with `pip install -e ".[dev]"` when not using Docker.
 - Citation rule: agents may interpret evidence, but they may not invent citations. Citation objects must come from stored source chunks and pass deterministic verification before results are saved or returned.
 - Required limitation text: "This is a decision-support draft, not final legal advice."
 - Keep the MVP local-first. Do not add auth, payments, cloud deployment, or multi-tenant complexity.
@@ -92,7 +94,7 @@ Do not build production features. Focus on the demo path and the minimum archite
   - product goal
   - local-first architecture
   - frontend/backend split
-  - expected local run commands
+  - expected Docker Compose run commands plus manual fallback commands
   - environment variables
   - limitation that output is decision support, not legal advice
 - Create or update `docs/architecture.md` with:
@@ -128,7 +130,7 @@ Do not build production features. Focus on the demo path and the minimum archite
 
 ## Instructions
 
-Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI backend with a clean folder structure and CORS configured for the frontend that will be generated separately by Lovable.
+Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI backend with a clean folder structure and CORS configured for the frontend.
 
 ## Implementation Details
 
@@ -148,25 +150,29 @@ Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI 
     - `backend/tests/`
 - Root requirements:
   - Add `.gitignore` for Python, Node, local JSON state, uploads, caches, and env files.
-  - Add `.env.example` with backend config keys and `VITE_API_BASE_URL` documented for the later frontend.
-  - Add local backend run instructions to `README.md`.
-  - Note that the frontend will be supplied as a downloadable `frontend/` folder from Lovable.
+  - Add `.env.example` with backend config keys and `VITE_API_BASE_URL` documented for the frontend.
+  - Add Docker-first run instructions to `README.md`.
+  - Add manual backend run instructions for debugging.
+  - Add `backend/Dockerfile`, root `docker-compose.yml`, and Makefile targets for starting, stopping, health checks, logs, and backend tests.
+  - Use `backend/pyproject.toml` as the backend packaging source of truth.
 
 ## Suggested Commands
 
 ```bash
 cd backend && python -m venv .venv
-cd backend && . .venv/bin/activate && pip install fastapi uvicorn python-dotenv
+cd backend && . .venv/bin/activate && pip install -e ".[dev]"
+make up
+make health
 ```
 
 Adjust commands to the existing environment if the project already has package managers or lockfiles.
 
 ## Acceptance Criteria
 
-- [ ] Backend starts locally and serves `/health`
+- [ ] Backend starts locally and in Docker and serves `/health`
 - [ ] CORS is configured for a local frontend on common Vite ports
 - [ ] Folder structure supports API, services, agents, and storage work
-- [ ] Root docs explain how to run the backend and where the Lovable frontend will be imported
+- [ ] Root docs explain Docker Compose run commands and manual fallback commands
 
 ## Dependencies
 
@@ -686,6 +692,7 @@ Important constraints:
 - Use REST API calls to a FastAPI backend.
 - The API base URL must come from `VITE_API_BASE_URL`, defaulting to `http://localhost:8000`.
 - The deliverable must be a self-contained Vite React TypeScript app in a folder named `frontend`.
+- The repo-level Docker flow will run this app through `frontend/Dockerfile` and `docker-compose.yml`, so keep the app compatible with `npm ci` and `npm run dev -- --host 0.0.0.0`.
 - Include `package.json`, `src/`, `index.html`, Vite config, TypeScript config, and `.env.example`.
 - Use mock data only as a fallback when the backend is unavailable. The real path must call the API contracts below.
 - The first screen should be the usable app workspace, not a marketing landing page.
@@ -761,6 +768,9 @@ Expected downloadable deliverable:
 ```text
 frontend/
   package.json
+  package-lock.json
+  Dockerfile
+  .dockerignore
   index.html
   vite.config.ts
   tsconfig.json
@@ -931,7 +941,7 @@ Design notes:
 - [ ] UI renders the full `AnalysisResult` contract
 - [ ] UI separates facts, citations, assumptions, uncertainties, generated interpretation, and agent trace
 - [ ] Frontend has clear loading, empty, and error states
-- [ ] Downloaded `frontend/` can be copied directly into this repo and run with `npm install && npm run dev`
+- [ ] Downloaded `frontend/` can be copied directly into this repo and run with Docker Compose or with `npm install && npm run dev`
 
 ## Dependencies
 
@@ -1016,8 +1026,7 @@ Validate the end-to-end demo path and fix blocking issues only. Do not add new f
   - "AI tool screens job applications, ranks candidates, and summarizes CVs for recruiters."
   - Include facts about purpose, users, affected persons, input data, output, automation level, human oversight, and uncertainty.
 - Run the full flow:
-  - start backend
-  - start frontend
+  - start backend and frontend with `make up` or `docker compose up --build`
   - create case
   - upload sample document
   - run analysis
@@ -1049,6 +1058,7 @@ Validate the end-to-end demo path and fix blocking issues only. Do not add new f
 - [ ] Follow-up chat works for at least one targeted question
 - [ ] Citation verifier accepts a real citation and rejects a fake citation
 - [ ] QA notes document remaining risks
+- [ ] Docker Compose health check passes
 
 ## Dependencies
 
@@ -1070,7 +1080,8 @@ Import the Lovable-generated frontend into this repo and perform final integrati
 
 - Copy the downloaded Lovable `frontend/` folder into the repo root.
 - Verify `frontend/.env.example` includes `VITE_API_BASE_URL=http://localhost:8000`.
-- Run `npm install` and `npm run dev` from `frontend/`.
+- Verify `frontend/Dockerfile` can run the app in Docker Compose.
+- Run the frontend through `make up`; use `npm install` and `npm run dev` from `frontend/` only for manual debugging.
 - Fix only integration mismatches:
   - endpoint paths
   - request/response field names
@@ -1100,7 +1111,8 @@ Import the Lovable-generated frontend into this repo and perform final integrati
 ## Acceptance Criteria
 
 - [ ] Lovable `frontend/` is present in the repo
-- [ ] Frontend runs with `npm install && npm run dev`
+- [ ] Frontend runs through Docker Compose
+- [ ] Frontend still runs manually with `npm install && npm run dev`
 - [ ] Frontend calls backend using `VITE_API_BASE_URL`
 - [ ] Create case, upload, analyze, evidence view, chat, and export work against the backend
 - [ ] Known limitations are documented in the app or README
@@ -1124,8 +1136,8 @@ Prepare the final hackathon demo. Verify the full path, document exactly how to 
 ## Implementation Details
 
 - Re-run the full demo path from a clean-ish local state:
-  - backend starts
-  - frontend starts
+  - `make up` starts backend and frontend
+  - `make health` returns backend health
   - create case
   - upload sample document
   - run analysis
@@ -1153,6 +1165,7 @@ Prepare the final hackathon demo. Verify the full path, document exactly how to 
 - [ ] Agent roles and autonomous decisions can be explained
 - [ ] Remaining risks and unfinished bonus features are documented
 - [ ] README has current local run instructions
+- [ ] README has current Docker Compose run instructions
 
 ## Dependencies
 

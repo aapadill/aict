@@ -59,3 +59,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## 5. Project Runtime
+
+Prefer the Docker Compose path for demo-level verification:
+
+```bash
+make up
+make health
+make test-backend
+```
+
+Use manual backend/frontend commands only when debugging a specific service. The backend package source of truth is `backend/pyproject.toml`; do not reintroduce a root-level or backend `requirements.txt` workflow unless explicitly requested.

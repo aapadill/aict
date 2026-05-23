@@ -4,6 +4,36 @@ Date: 2026-05-23
 
 ## Commands Run
 
+Docker configuration verification run:
+
+```bash
+docker compose config --quiet
+make -n up
+make -n test-backend
+```
+
+Current Docker demo path to run:
+
+```bash
+make up
+make health
+make ps
+make logs
+make test-backend
+```
+
+Equivalent raw commands to run:
+
+```bash
+docker compose up --build
+curl -sS http://127.0.0.1:8000/health
+docker compose ps
+docker compose logs -f
+docker compose run --rm backend python -m pytest
+```
+
+Manual backend tests previously run:
+
 ```bash
 cd backend
 .venv/bin/python -m pytest
@@ -30,6 +60,9 @@ curl -I -sS http://127.0.0.1:5173/
 
 ## What Worked
 
+- Docker Compose is now the documented default runtime for backend and frontend together.
+- The Makefile provides `make up`, `make up-alt`, `make down`, `make clean`, `make health`, and `make test-backend`.
+- `docker compose config --quiet` completed successfully.
 - Backend health endpoint returned `{"status":"ok"}`.
 - Frontend Vite server returned `HTTP/1.1 200 OK`.
 - Backend test suite passed: `40 passed`.
@@ -45,6 +78,9 @@ curl -I -sS http://127.0.0.1:5173/
 
 ## Known Issues And Risks
 
+- Docker image builds require package registry access the first time dependencies are installed.
+- Containerized backend state lives in the `backend-data` Docker volume, not directly in `backend/data/state/`; use `make clean` to wipe demo state.
+- The Compose stack does not start Ollama. A host model server must be reachable from inside the backend container, for example via `host.docker.internal` on Docker Desktop, and the backend must be configured with per-agent model environment variables to avoid deterministic fallback.
 - Frontend dependency install required npm registry access. In a restricted network, run `npm install` before the demo or keep `node_modules` available locally.
 - `npm audit` reported two moderate vulnerabilities in the frontend dependency tree. Not blocking for the hackathon demo, but should be reviewed later.
 - The AI Act corpus is curated excerpts/placeholders, not full official corpus ingestion.
