@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from app.core.config import settings
-from app.models.analysis import AgentState, AssessmentSection
+from app.models.analysis import AgentState, AssessmentSection, Citation
 from app.services import llm as llm_service
 from app.storage import JsonRepository, repository
 
@@ -57,6 +57,12 @@ Risk levels under the EU AI Act:
 
 Important: prohibited-practice concerns take priority and must be flagged even if high-risk signals are also present.
 
+Legal corpus chunks describe the law. They do not prove that the user's uploaded use case belongs to a category.
+Uploaded-document chunks prove use-case facts. Legal-rule chunks prove AI Act rules.
+
+If uploaded-document chunks do not clearly establish the intended purpose, outputs, sector, and deployment context,
+return an unclear low-confidence classification. Do not infer categories from legal examples.
+
 Respond with valid JSON only. No markdown. No text outside the JSON object.\
 """
 
@@ -72,9 +78,26 @@ Return ONLY this JSON:
   "confidence": "low|medium|high",
   "reasoning": "2-3 short sentences referencing specific Annex III categories or Article 5 provisions where applicable",
   "uncertainties": ["only open questions that could change the classification, max 3"],
-  "chunk_ids": ["chunk_ids from the provided context that ground the conclusion"]
+  "use_case_fact_chunk_ids": ["uploaded_document chunk_ids that establish the use-case facts being classified"],
+  "legal_rule_chunk_ids": ["legislation or official_guidance chunk_ids that establish the legal rule"],
+  "unsupported_claims": ["classification claims that could not be grounded in uploaded-document chunks"]
 }\
 """
+
+REQUIRED_CLASSIFICATION_FACTS = ("Purpose", "Sector", "Outputs", "Deployment context")
+
+CATEGORY_EVIDENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "biometric": ("biometric", "face recognition", "facial recognition", "fingerprint", "identity verification"),
+    "migration": ("migration", "asylum", "border control", "border"),
+    "asylum": ("migration", "asylum", "border control", "border"),
+    "border": ("migration", "asylum", "border control", "border"),
+    "law enforcement": ("law enforcement", "policing", "police", "criminal offence"),
+    "employment": ("employment", "hiring", "recruiting", "candidate", "worker management"),
+    "education": ("education", "student", "school", "vocational"),
+    "essential": ("essential service", "benefit", "credit", "loan", "insurance"),
+    "critical infrastructure": ("critical infrastructure", "energy grid", "transport network"),
+    "justice": ("court", "judge", "justice", "democratic process", "election"),
+}
 
 
 @dataclass
@@ -82,6 +105,14 @@ class RiskClassificationAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
+        missing_facts = _missing_classification_facts(state)
+        if missing_facts:
+            return self._run_unclear_guardrail(
+                state,
+                missing_facts,
+                "core_uploaded_facts_missing",
+            )
+
         model = settings.risk_classification_agent_model
         if model:
             try:
@@ -138,20 +169,43 @@ class RiskClassificationAgent:
         if confidence not in ("low", "medium", "high"):
             confidence = "low"
 
-        state.risk_classification = AssessmentSection(
+        use_case_citations = _citations_for_source_type(
+            data.get("use_case_fact_chunk_ids", []),
+            chunk_map,
+            source_type="uploaded_document",
+        )
+        legal_citations = _citations_excluding_source_type(
+            data.get("legal_rule_chunk_ids", []),
+            chunk_map,
+            excluded_source_type="uploaded_document",
+        )
+        unsupported_claims = _string_list(data.get("unsupported_claims", []))
+
+        section = AssessmentSection(
             title="Risk classification",
             conclusion=data.get("conclusion", ""),
             confidence=confidence,
             reasoning=data.get("reasoning", ""),
-            citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
+            citations=_dedupe_citations([*use_case_citations, *legal_citations]),
             assumptions=["Classification is preliminary and based on currently uploaded materials."],
-            uncertainties=dedupe(data.get("uncertainties", []))[:3],
+            uncertainties=dedupe(
+                [
+                    *_string_list(data.get("uncertainties", []))[:3],
+                    *[f"Unsupported classification claim: {claim}" for claim in unsupported_claims],
+                ]
+            ),
+        )
+        state.risk_classification = self._apply_classification_guardrails(
+            state,
+            section,
+            use_case_citations=use_case_citations,
+            legal_citations=legal_citations,
         )
         add_trace(
             state,
             "RiskClassificationAgent",
             "classify_risk",
-            f"LLM risk conclusion: {data.get('conclusion', '')[:120]}",
+            f"Risk conclusion after guardrails: {state.risk_classification.conclusion[:120]}",
         )
         return state
 
@@ -193,9 +247,8 @@ class RiskClassificationAgent:
             conclusion = f"Possible high-risk classification due to {sector} context."
             confidence = "medium"
             reasoning = (
-                "The use case contains sector or purpose signals that map to AI Act high-risk areas, "
-                "such as employment, education, essential services, biometrics, law enforcement, migration, "
-                "critical infrastructure, or administration of justice."
+                f"The uploaded material contains {sector} signals that may map to an AI Act high-risk area. "
+                "The exact Annex III intended purpose and any applicable exception still need confirmation."
             )
             citations = [
                 *retrieve(state, sector, ["uploaded_document"], 2, self.repo),
@@ -228,7 +281,7 @@ class RiskClassificationAgent:
                 "Need clearer sector, affected-person, output, and deployment-context facts.",
             ]
 
-        state.risk_classification = AssessmentSection(
+        section = AssessmentSection(
             title="Risk classification",
             conclusion=conclusion,
             confidence=confidence,
@@ -237,13 +290,87 @@ class RiskClassificationAgent:
             assumptions=["Classification is preliminary and based on currently uploaded materials."],
             uncertainties=dedupe(uncertainties),
         )
+        state.risk_classification = self._apply_classification_guardrails(
+            state,
+            section,
+            use_case_citations=[
+                citation for citation in section.citations if citation.source_type == "uploaded_document"
+            ],
+            legal_citations=[
+                citation for citation in section.citations if citation.source_type != "uploaded_document"
+            ],
+        )
         add_trace(
             state,
             "RiskClassificationAgent",
             "classify_risk",
-            f"Produced preliminary risk conclusion: {conclusion}",
+            f"Produced preliminary risk conclusion after guardrails: {state.risk_classification.conclusion}",
         )
         return state
+
+    def _run_unclear_guardrail(
+        self,
+        state: AgentState,
+        missing_facts: list[str],
+        reason: str,
+    ) -> AgentState:
+        state.risk_classification = _unclear_classification_section(
+            [
+                "Risk classification requires uploaded-document evidence for: "
+                + ", ".join(missing_facts)
+                + ".",
+                "Legal corpus examples were not applied because the uploaded documents do not establish the required use-case facts.",
+            ]
+        )
+        add_trace(
+            state,
+            "RiskClassificationAgent",
+            "classify_risk",
+            f"Guardrail forced unclear classification ({reason}): missing {', '.join(missing_facts)}.",
+        )
+        return state
+
+    def _apply_classification_guardrails(
+        self,
+        state: AgentState,
+        section: AssessmentSection,
+        use_case_citations: list[Citation],
+        legal_citations: list[Citation],
+    ) -> AssessmentSection:
+        missing_facts = _missing_classification_facts(state)
+        if missing_facts:
+            return _unclear_classification_section(
+                [
+                    "Risk classification requires uploaded-document evidence for: "
+                    + ", ".join(missing_facts)
+                    + ".",
+                    "Legal corpus examples were not applied because the uploaded documents do not establish the required use-case facts.",
+                ]
+            )
+
+        if _is_determinate_classification(section) and (not use_case_citations or not legal_citations):
+            return _unclear_classification_section(
+                [
+                    "A determinate risk classification requires both uploaded-document fact evidence and legal-rule evidence.",
+                    "The model output did not provide both evidence types, so the classification was downgraded.",
+                ]
+            )
+
+        unsupported_terms = _unsupported_category_terms(
+            f"{section.conclusion} {section.reasoning}",
+            joined_uploaded_text(state, repo=self.repo),
+        )
+        if unsupported_terms:
+            return _unclear_classification_section(
+                [
+                    "The model mentioned category terms not supported by uploaded-document evidence: "
+                    + ", ".join(unsupported_terms)
+                    + ".",
+                    "Legal examples cannot establish facts about the uploaded use case.",
+                ]
+            )
+
+        return section
 
     def _prohibited_signal(self, text: str) -> str | None:
         signals = [
@@ -286,12 +413,86 @@ class RiskClassificationAgent:
         return None
 
 
-def _dedupe_citations(citations: list) -> list:
+def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
     seen: set[str] = set()
-    result: list = []
+    result: list[Citation] = []
     for citation in citations:
-        if citation.id in seen:
+        key = citation.chunk_id or citation.id
+        if key in seen:
             continue
-        seen.add(citation.id)
+        seen.add(key)
         result.append(citation)
     return result
+
+
+def _missing_classification_facts(state: AgentState) -> list[str]:
+    facts = {fact.label: fact for fact in state.facts}
+    missing: list[str] = []
+    for label in REQUIRED_CLASSIFICATION_FACTS:
+        fact = facts.get(label)
+        if fact is None or fact.status != "found":
+            missing.append(label)
+    return missing
+
+
+def _unclear_classification_section(uncertainties: list[str]) -> AssessmentSection:
+    return AssessmentSection(
+        title="Risk classification",
+        conclusion="Risk classification is unclear from the uploaded documents.",
+        confidence="low",
+        reasoning=(
+            "The uploaded documents do not establish enough use-case facts to classify the system as "
+            "prohibited, high-risk, limited-risk, or minimal-risk. A legal category should not be inferred "
+            "from AI Act corpus examples alone."
+        ),
+        citations=[],
+        assumptions=["Classification is preliminary and based on currently uploaded materials."],
+        uncertainties=dedupe(uncertainties),
+    )
+
+
+def _is_determinate_classification(section: AssessmentSection) -> bool:
+    text = f"{section.conclusion} {section.reasoning}".lower()
+    if any(term in text for term in ("unclear", "insufficient", "cannot determine", "not enough")):
+        return False
+    return any(term in text for term in ("high-risk", "high risk", "prohibited", "limited-risk", "minimal-risk", "minimal risk"))
+
+
+def _unsupported_category_terms(text: str, uploaded_text: str) -> list[str]:
+    unsupported: list[str] = []
+    for term, evidence_keywords in CATEGORY_EVIDENCE_KEYWORDS.items():
+        if term not in text.lower():
+            continue
+        if not contains_any(uploaded_text, evidence_keywords):
+            unsupported.append(term)
+    return unsupported
+
+
+def _citations_for_source_type(
+    chunk_ids: list[str],
+    chunk_map: dict[str, Citation],
+    source_type: str,
+) -> list[Citation]:
+    return [
+        citation
+        for citation in citations_for_ids(_string_list(chunk_ids), chunk_map)
+        if citation.source_type == source_type
+    ]
+
+
+def _citations_excluding_source_type(
+    chunk_ids: list[str],
+    chunk_map: dict[str, Citation],
+    excluded_source_type: str,
+) -> list[Citation]:
+    return [
+        citation
+        for citation in citations_for_ids(_string_list(chunk_ids), chunk_map)
+        if citation.source_type != excluded_source_type
+    ]
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

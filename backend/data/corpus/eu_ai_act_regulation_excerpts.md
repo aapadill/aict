@@ -1,11 +1,9 @@
 Source-ID: eu_ai_act_regulation_2024_1689
 Source-Type: legislation
-Source-Title: Regulation (EU) 2024/1689 (Artificial Intelligence Act) - curated excerpts
+Source-Title: Regulation (EU) 2024/1689 (Artificial Intelligence Act)
 Source-URL: http://data.europa.eu/eli/reg/2024/1689/oj
 ---
-# Regulation (EU) 2024/1689 - curated excerpts
-
-TODO: Replace this curated excerpt file with full official corpus ingestion from EUR-Lex for production use.
+# Regulation (EU) 2024/1689 - selected demo reference excerpts
 
 ## Article 3(1) - AI system
 

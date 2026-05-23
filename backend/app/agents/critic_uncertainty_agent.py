@@ -129,8 +129,8 @@ class CriticUncertaintyAgent:
         add_trace(
             state,
             "CriticUncertaintyAgent",
-            "llm_critique",
-            f"LLM added {len(data.get('additional_missing_information', []))} missing items, "
+            "review_additional_uncertainty",
+            f"Added {len(data.get('additional_missing_information', []))} missing items, "
             f"{len(data.get('additional_uncertainties', []))} uncertainties, "
             f"{len(data.get('additional_follow_up_questions', []))} questions.",
         )

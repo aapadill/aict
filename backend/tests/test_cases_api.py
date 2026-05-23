@@ -361,6 +361,45 @@ def test_chat_flags_new_fact_for_reassessment(
     assert repo.list_messages(case_id)[0].role == "user"
 
 
+def test_chat_with_ungrounded_case_does_not_leak_reference_citations(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "Nonsense input"}).json()["id"]
+    client.post(
+        f"/cases/{case_id}/documents",
+        files=[
+            (
+                "files",
+                (
+                    "nonsense.txt",
+                    b"/\\_/\\\n( o.o )\n > ^ <\nzibble worp glint paperclip moon toast.",
+                    "text/plain",
+                ),
+            )
+        ],
+    )
+    analyze_response = client.post(f"/cases/{case_id}/analyze")
+    assert analyze_response.status_code == 200
+
+    response = client.post(
+        f"/cases/{case_id}/chat",
+        json={"message": "what is going on"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["citations"] == []
+    assert "could not ground an AI Act analysis" in payload["content"]
+    assert "chunk_" not in payload["content"]
+    assert "Article 3" not in payload["content"]
+    assert "Regulation (EU)" not in payload["content"]
+
+    stored_messages = repo.list_messages(case_id)
+    assert stored_messages[-1].role == "assistant"
+    assert stored_messages[-1].citations == []
+
+
 def test_chat_requires_saved_analysis(client_and_repo: tuple[TestClient, JsonRepository]) -> None:
     client, _repo = client_and_repo
     case_id = client.post("/cases", json={"title": "No analysis yet"}).json()["id"]
