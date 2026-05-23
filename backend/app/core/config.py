@@ -53,8 +53,9 @@ class Settings:
     ai_act_corpus_dir: Path = field(
         default_factory=lambda: _resolve(os.getenv("AI_ACT_CORPUS_DIR", "backend/data/corpus"))
     )
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "mock"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai"))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     embedding_provider: str = field(
         default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "local")

@@ -105,6 +105,10 @@ def _call_openai(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    client = openai.OpenAI(api_key=settings.openai_api_key)
+    client_kwargs = {"api_key": settings.openai_api_key}
+    if settings.openai_base_url:
+        client_kwargs["base_url"] = settings.openai_base_url
+    
+    client = openai.OpenAI(**client_kwargs)
     response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content

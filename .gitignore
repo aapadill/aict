@@ -10,6 +10,9 @@ __pycache__/
 # Local virtualenvs
 .venv/
 backend/.venv/
+backend/venv/*
+
+
 
 # Local hackathon state and uploaded files
 backend/data/**
