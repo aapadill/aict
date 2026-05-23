@@ -82,6 +82,7 @@ def test_repository_persists_records_and_nested_analysis(tmp_path) -> None:
     reloaded.initialize()
 
     assert reloaded.get_case(case.id) == case
+    assert reloaded.get_document(document.id) == document
     assert reloaded.list_documents(case.id)[0] == document
     assert reloaded.get_chunk("chunk-1", case.id) == chunk
     assert reloaded.get_chunk("chunk-1") == chunk
@@ -92,3 +93,26 @@ def test_repository_persists_records_and_nested_analysis(tmp_path) -> None:
     ] == "ranks candidates"
     assert reloaded.list_messages(case.id)[0].citations[0]["chunk_id"] == "chunk-1"
     assert reloaded.list_evidence(case.id)[0].metadata == {"kind": "fact"}
+
+
+def test_repository_updates_document_status(tmp_path) -> None:
+    repo = JsonRepository(data_dir=tmp_path / "data")
+    repo.initialize()
+    case = repo.create_case("Recruiting assistant", None)
+    document = repo.save_document(
+        case_id=case.id,
+        filename="brief.txt",
+        content_type="text/plain",
+        status="uploaded",
+    )
+
+    updated = repo.update_document_status(
+        document_id=document.id,
+        status="parsed",
+        extracted_text_path=repo.extracted_dir / case.id / f"{document.id}.txt",
+    )
+
+    assert updated is not None
+    assert updated.status == "parsed"
+    assert updated.extractedtextpath == str(repo.extracted_dir / case.id / f"{document.id}.txt")
+    assert repo.get_document(document.id) == updated

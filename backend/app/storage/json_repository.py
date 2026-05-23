@@ -5,7 +5,7 @@ import os
 import tempfile
 import threading
 import uuid
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -227,6 +227,42 @@ class JsonRepository:
                 if document.caseid == case_id
             ]
 
+    def get_document(self, document_id: str) -> Document | None:
+        with self._lock:
+            return next(
+                (
+                    document
+                    for document in self._read_models(self.documents_path, Document)
+                    if document.id == document_id
+                ),
+                None,
+            )
+
+    def update_document_status(
+        self,
+        document_id: str,
+        status: str,
+        extracted_text_path: str | Path | None = None,
+    ) -> Document | None:
+        with self._lock:
+            documents = self._read_models(self.documents_path, Document)
+            updated_document: Document | None = None
+            updated_documents: list[Document] = []
+            for document in documents:
+                if document.id == document_id:
+                    updated_document = replace(
+                        document,
+                        status=status,
+                        extractedtextpath=_jsonable_path(extracted_text_path),
+                    )
+                    updated_documents.append(updated_document)
+                else:
+                    updated_documents.append(document)
+
+            if updated_document is not None:
+                self._write_models(self.documents_path, updated_documents)
+            return updated_document
+
     def save_chunk(self, case_id: str, chunk: dict[str, Any]) -> Chunk:
         text = str(_get(chunk, "text", default=""))
         metadata = _get(chunk, "metadata", "metadata_json", default={})
@@ -432,6 +468,18 @@ def save_document(
 
 def list_documents(case_id: str) -> list[Document]:
     return repository.list_documents(case_id)
+
+
+def get_document(document_id: str) -> Document | None:
+    return repository.get_document(document_id)
+
+
+def update_document_status(
+    document_id: str,
+    status: str,
+    extracted_text_path: str | Path | None = None,
+) -> Document | None:
+    return repository.update_document_status(document_id, status, extracted_text_path)
 
 
 def save_chunk(case_id: str, chunk: dict[str, Any]) -> Chunk:

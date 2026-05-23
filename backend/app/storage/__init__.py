@@ -9,6 +9,7 @@ from app.storage.json_repository import (
     create_case,
     get_case,
     get_chunk,
+    get_document,
     get_latest_analysis,
     initialize_storage,
     list_cases,
@@ -22,6 +23,7 @@ from app.storage.json_repository import (
     save_document,
     save_evidence,
     save_message,
+    update_document_status,
 )
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
     "create_case",
     "get_case",
     "get_chunk",
+    "get_document",
     "get_latest_analysis",
     "initialize_storage",
     "list_cases",
@@ -48,4 +51,5 @@ __all__ = [
     "save_document",
     "save_evidence",
     "save_message",
+    "update_document_status",
 ]
