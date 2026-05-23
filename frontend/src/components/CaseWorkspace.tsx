@@ -8,20 +8,16 @@ import {
 import type { AnalysisResult, Case, DocumentRecord } from "../types/api";
 import DocumentUploader from "./DocumentUploader";
 import AnalysisReport from "./AnalysisReport";
-import EvidencePanel from "./EvidencePanel";
 import ChatPanel from "./ChatPanel";
-import AgentTrace from "./AgentTrace";
 import EmptyState from "./EmptyState";
 import LoadingButton from "./LoadingButton";
 import { buildMarkdownReport, downloadMarkdown } from "../utils/exportReport";
 
-type Tab = "report" | "evidence" | "chat" | "trace";
+type Tab = "report" | "chat";
 
 const TAB_LABELS: Record<Tab, string> = {
   report: "Report",
-  evidence: "Evidence",
   chat: "Chat",
-  trace: "Agent trace",
 };
 
 export default function CaseWorkspace({
@@ -121,9 +117,7 @@ export default function CaseWorkspace({
 
   const tabItems: { id: Tab; label: string; meta: string }[] = [
     { id: "report", label: TAB_LABELS.report, meta: analysis ? "Ready" : "Draft" },
-    { id: "evidence", label: TAB_LABELS.evidence, meta: `${analysis?.citations.length ?? 0}` },
     { id: "chat", label: TAB_LABELS.chat, meta: "Ask" },
-    { id: "trace", label: TAB_LABELS.trace, meta: `${analysis?.agent_trace.length ?? 0}` },
   ];
 
   if (loadingCase && !caseData) {
@@ -237,7 +231,7 @@ export default function CaseWorkspace({
               loadingAnalysis ? (
                 <div className="panel"><span className="spinner" /> Loading analysis…</div>
               ) : analysis ? (
-                <AnalysisReport a={analysis} />
+                <AnalysisReport a={analysis} onOpenChat={() => setTab("chat")} />
               ) : (
                 <EmptyState
                   icon="◷"
@@ -260,32 +254,8 @@ export default function CaseWorkspace({
               )
             )}
 
-            {tab === "evidence" && (
-              <div className="panel">
-                <div className="section-head">
-                  <div>
-                    <h2>Evidence & citations</h2>
-                    <p>{analysis?.citations.length ?? 0} cited source{(analysis?.citations.length ?? 0) === 1 ? "" : "s"}</p>
-                  </div>
-                </div>
-                <EvidencePanel citations={analysis?.citations ?? []} />
-              </div>
-            )}
-
             {tab === "chat" && (
               <ChatPanel caseId={caseId} onReassessRequested={handleRunAnalysis} />
-            )}
-
-            {tab === "trace" && (
-              <div className="panel">
-                <div className="section-head">
-                  <div>
-                    <h2>Agent trace</h2>
-                    <p>{analysis?.agent_trace.length ?? 0} event{(analysis?.agent_trace.length ?? 0) === 1 ? "" : "s"}</p>
-                  </div>
-                </div>
-                <AgentTrace events={analysis?.agent_trace ?? []} />
-              </div>
             )}
           </div>
         </section>

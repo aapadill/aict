@@ -528,7 +528,7 @@ label {
   top: 70px;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -720,7 +720,7 @@ label {
   gap: 12px;
 }
 
-.tldr-panel {
+.risk-summary-panel {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
   gap: 18px;
@@ -732,46 +732,55 @@ label {
   padding: 18px;
 }
 
-.tldr-panel.high {
+.risk-summary-panel.high {
   border-left-color: var(--low);
 }
 
-.tldr-panel.medium {
+.risk-summary-panel.medium {
   border-left-color: var(--medium);
 }
 
-.tldr-panel.low {
+.risk-summary-panel.low {
   border-left-color: var(--high);
 }
 
-.tldr-panel h2 {
+.risk-summary-panel h2 {
   margin: 0;
   color: var(--text);
   font-size: 22px;
   line-height: 1.18;
 }
 
-.tldr-panel p {
+.risk-summary-panel p {
   margin: 8px 0 0;
   color: var(--text);
   overflow-wrap: anywhere;
 }
 
-.tldr-why {
+.risk-summary-why {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
   padding: 12px;
 }
 
-.tldr-why > span:first-child {
+.risk-summary-why > span:first-child {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
 }
 
-.tldr-why .badge {
-  margin-top: 10px;
+.risk-summary-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -4px;
+}
+
+.risk-summary-footer .badge {
+  margin-left: auto;
 }
 
 .report-overview {
@@ -811,6 +820,22 @@ label {
 .report-metrics strong {
   margin-top: 2px;
   font-size: 24px;
+}
+
+.report-chat-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-chat-cta h2 {
+  margin: 0;
+}
+
+.report-chat-cta p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
 }
 
 .assessment {
@@ -1039,7 +1064,7 @@ label {
 @media (max-width: 1100px) {
   .dashboard-layout,
   .workspace-grid,
-  .tldr-panel,
+  .risk-summary-panel,
   .report-overview {
     grid-template-columns: 1fr;
   }
@@ -1098,7 +1123,11 @@ label {
 
   .tabs {
     top: 115px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-chat-cta {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .msg {

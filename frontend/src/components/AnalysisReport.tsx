@@ -1,6 +1,7 @@
 import React from "react";
 import type { AnalysisResult, AssessmentSection, ExtractedFact } from "../types/api";
-import { CitationItem } from "./EvidencePanel";
+import EvidencePanel, { CitationItem } from "./EvidencePanel";
+import AgentTrace from "./AgentTrace";
 
 function SectionView({ s }: { s: AssessmentSection }) {
   return (
@@ -72,23 +73,34 @@ function riskLabel(conclusion: string): string {
   return "Risk needs review";
 }
 
-export default function AnalysisReport({ a }: { a: AnalysisResult }) {
+export default function AnalysisReport({
+  a,
+  onOpenChat,
+}: {
+  a: AnalysisResult;
+  onOpenChat: () => void;
+}) {
   const tone = riskTone(a.risk_classification.conclusion);
   const label = riskLabel(a.risk_classification.conclusion);
 
   return (
     <div className="report-stack">
-      <section className={`tldr-panel ${tone}`}>
+      <section className={`risk-summary-panel ${tone}`}>
         <div>
-          <div className="eyebrow">TL;DR</div>
+          <div className="eyebrow">Summary</div>
           <h2>{label}</h2>
           <p>{a.risk_classification.conclusion}</p>
         </div>
-        <div className="tldr-why">
+        <div className="risk-summary-why">
           <span>Why</span>
           <p>{a.risk_classification.reasoning}</p>
+        </div>
+        <div className="risk-summary-footer">
+          <button className="primary compact" onClick={onOpenChat}>
+            Ask about this in the chat
+          </button>
           <span className={`badge ${a.risk_classification.confidence}`}>
-            {a.risk_classification.confidence} confidence
+            {a.risk_classification.confidence} certainty
           </span>
         </div>
       </section>
@@ -169,6 +181,26 @@ export default function AnalysisReport({ a }: { a: AnalysisResult }) {
       </div>
 
       <div className="panel">
+        <div className="section-head">
+          <div>
+            <h2>Evidence & citations</h2>
+            <p>{a.citations.length} cited source{a.citations.length === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        <EvidencePanel citations={a.citations} />
+      </div>
+
+      <div className="panel">
+        <div className="section-head">
+          <div>
+            <h2>Agent trace</h2>
+            <p>{a.agent_trace.length} event{a.agent_trace.length === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        <AgentTrace events={a.agent_trace} />
+      </div>
+
+      <div className="panel">
         <h2>Follow-up questions</h2>
         {a.follow_up_questions.length === 0 ? (
           <div className="muted small">None.</div>
@@ -177,6 +209,16 @@ export default function AnalysisReport({ a }: { a: AnalysisResult }) {
             {a.follow_up_questions.map((q, i) => <li key={i}>{q}</li>)}
           </ul>
         )}
+      </div>
+
+      <div className="panel report-chat-cta">
+        <div>
+          <h2>Continue in chat</h2>
+          <p>Ask a follow-up question, challenge the classification, or add new facts for reassessment.</p>
+        </div>
+        <button className="primary" onClick={onOpenChat}>
+          Open chat
+        </button>
       </div>
     </div>
   );
