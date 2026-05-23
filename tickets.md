@@ -10,6 +10,7 @@ These tickets are written so each one can be pasted into a coding agent as a sta
 - Suggested backend: Python + FastAPI.
 - Suggested storage: SQLite for app data, local filesystem for uploads, local vector/lexical retrieval for document chunks.
 - Suggested agent style: stateful graph or orchestrator with named agents and shared JSON state.
+- Citation rule: agents may interpret evidence, but they may not invent citations. Citation objects must come from stored source chunks and pass deterministic verification before results are saved or returned.
 - Required limitation text: "This is a decision-support draft, not final legal advice."
 - Keep the MVP local-first. Do not add auth, payments, cloud deployment, or multi-tenant complexity.
 - If an external LLM or embedding service is unavailable, implement a clean fallback or mock so the demo path still works.
@@ -23,11 +24,15 @@ type SourceType = "uploaded_document" | "legislation" | "official_guidance" | "n
 
 type Citation = {
   id: string;
+  source_id?: string;
+  chunk_id?: string;
   source_type: SourceType;
   source_title: string;
   document_id?: string;
   location?: string;
   snippet: string;
+  quote_hash?: string;
+  verified?: boolean;
 };
 
 type ExtractedFact = {
@@ -75,7 +80,7 @@ type AnalysisResult = {
 - H01-PM-01 MVP scope, architecture, and demo path
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Create the project planning artifacts for an AI Act Compliance Assistant hackathon MVP. The app should let a user create one AI-use-case session, upload multiple supporting documents, run a cited EU AI Act first-pass assessment, and ask follow-up questions. Write concise docs that future implementation agents can follow.
 
@@ -121,7 +126,7 @@ Do not build production features. Focus on the demo path and the minimum archite
 - H02-BE-BOOT Backend scaffold and local dev wiring
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI backend with a clean folder structure and CORS configured for the frontend that will be generated separately by Lovable.
 
@@ -175,7 +180,7 @@ Adjust commands to the existing environment if the project already has package m
 - H03-DATA-01 Storage model and local persistence
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Implement local persistence for the AI Act Compliance Assistant backend. Use SQLite for structured data and the local filesystem for uploaded files. Keep it simple and reliable for a 24-hour hackathon.
 
@@ -186,9 +191,11 @@ Implement local persistence for the AI Act Compliance Assistant backend. Use SQL
 - Store these entities:
   - `cases`: id, title, description, created_at, updated_at
   - `documents`: id, case_id, filename, content_type, file_path, status, extracted_text_path, created_at
+  - `chunks`: id, case_id, source_id, source_type, source_title, document_id, location, text, normalized_text_hash, metadata_json, created_at
   - `analyses`: id, case_id, status, result_json, created_at, updated_at
   - `messages`: id, case_id, role, content, citations_json, created_at
   - `evidence`: id, case_id, source_type, source_title, document_id, location, snippet, metadata_json
+- The `chunks` table is the source of truth for citations. Final citations must point to real chunk IDs stored there.
 - Add an initialization path that creates the DB on app startup.
 - Add upload directories:
   - `backend/data/uploads/`
@@ -206,6 +213,9 @@ list_cases() -> list[Case]
 get_case(case_id: str) -> Case | None
 save_document(...) -> Document
 list_documents(case_id: str) -> list[Document]
+save_chunk(...) -> Chunk
+get_chunk(chunk_id: str) -> Chunk | None
+list_chunks(case_id: str) -> list[Chunk]
 save_analysis(case_id: str, result: dict, status: str = "complete") -> Analysis
 get_latest_analysis(case_id: str) -> Analysis | None
 save_message(case_id: str, role: str, content: str, citations: list[dict]) -> Message
@@ -214,7 +224,8 @@ save_message(case_id: str, role: str, content: str, citations: list[dict]) -> Me
 ## Acceptance Criteria
 
 - [ ] SQLite DB is created automatically
-- [ ] Cases, documents, analyses, messages, and evidence can be persisted
+- [ ] Cases, documents, chunks, analyses, messages, and evidence can be persisted
+- [ ] Stored chunks include enough metadata to verify citations deterministically
 - [ ] Upload and extracted-text directories are created automatically
 - [ ] Analysis JSON can be saved and loaded without losing nested fields
 - [ ] Storage code is isolated from API route code
@@ -231,7 +242,7 @@ save_message(case_id: str, role: str, content: str, citations: list[dict]) -> Me
 - H04-BE-01 Case and document API
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Build the backend API for case sessions and document uploads. Users need to create one AI-use-case session, list/open sessions, and upload multiple documents to a case.
 
@@ -296,7 +307,7 @@ Build the backend API for case sessions and document uploads. Users need to crea
 - H05-DOC-01 Document parsing and fact-ready text extraction
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Implement document text extraction for uploaded use-case documents. The analysis agents need clean text with source metadata so they can cite uploaded material later.
 
@@ -361,7 +372,7 @@ parse_case_documents(case_id: str) -> list[ExtractedDocument]
 - H06-AG-01 Shared agent state and output schema
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Define the shared state and output schemas for the multi-agent AI Act analysis workflow. The frontend and backend should agree on a stable `AnalysisResult` shape.
 
@@ -377,6 +388,7 @@ Define the shared state and output schemas for the multi-agent AI Act analysis w
   - `AgentTraceEvent`
   - `AnalysisResult`
   - `AgentState`
+- `Citation` must include enough fields for deterministic verification: `id`, optional `source_id`, optional `chunk_id`, `source_type`, `source_title`, optional `document_id`, optional `location`, `snippet`, optional `quote_hash`, and optional `verified`.
 - Required fact labels:
   - Purpose
   - Users
@@ -422,7 +434,7 @@ Define the shared state and output schemas for the multi-agent AI Act analysis w
 - H07-RAG-01 AI Act corpus, chunking, retrieval, and citations
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Implement the retrieval layer for uploaded documents and built-in EU AI Act reference material. The app must return source snippets with metadata so the analysis can be grounded and cited.
 
@@ -449,16 +461,39 @@ index_case(case_id: str) -> None
 search_case(case_id: str, query: str, source_types: list[str] | None = None, limit: int = 5) -> list[Citation]
 ```
 
+- Add deterministic citation verifier service:
+
+```python
+verify_citation(citation: Citation) -> VerifiedCitationResult
+verify_citations(citations: list[Citation]) -> list[Citation]
+verify_analysis_citations(result: AnalysisResult) -> AnalysisResult
+```
+
+- Verification rules:
+  - Do not rely on an LLM or agent to validate citations.
+  - Do not use raw `grep` over arbitrary files as the primary verifier. Grep-style normalized substring search is acceptable as a fallback, but the primary verification path is resolving a citation to a persisted chunk ID and validating the snippet/hash against that chunk text.
+  - Citation `id` or `chunk_id` must resolve to a stored chunk row.
+  - Uploaded-document citations must point to an existing uploaded document.
+  - Regulatory citations must point to a stored built-in corpus chunk.
+  - `source_type`, `source_title`, and `location` must match the stored chunk metadata.
+  - `snippet` must match the stored chunk text after deterministic normalization: lowercase, collapse whitespace, normalize quotes/dashes, strip leading/trailing punctuation.
+  - Store or recompute `quote_hash` from the normalized snippet when possible.
+  - If exact normalized substring matching fails, allow only a strict near-match fallback, such as token overlap above a high threshold. Record that fallback in metadata.
+  - If verification fails, remove the citation from the result and add an uncertainty like "A generated citation could not be verified against the stored source text."
+  - Do not use an LLM to decide whether a citation is real.
+
 - Retrieval can be:
   - vector search if dependencies/API keys are ready
   - lexical/BM25/simple scoring if speed is more important
 - Required citation metadata:
   - stable id
+  - source id or chunk id
   - source type
   - source title
   - document id if uploaded source
   - page/section/location if available
   - snippet
+  - optional normalized quote hash
 - Make source separation explicit:
   - uploaded-document facts
   - legislation/reference material
@@ -471,6 +506,8 @@ search_case(case_id: str, query: str, source_types: list[str] | None = None, lim
 - [ ] Search returns relevant snippets for a query
 - [ ] Retrieval results include source title, source type, snippet, and location metadata
 - [ ] Citation objects match the shared schema
+- [ ] Citation verifier confirms citations against stored chunks without using an agent or LLM
+- [ ] Invalid citations are stripped or marked unsupported before reaching the final analysis
 
 ## Dependencies
 
@@ -484,7 +521,7 @@ search_case(case_id: str, query: str, source_types: list[str] | None = None, lim
 - H08-AG-03 Core analysis agents
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Implement the core multi-agent analysis functions for the AI Act Compliance Assistant. The goal is to produce a structured first-pass assessment from uploaded documents and retrieved AI Act references.
 
@@ -500,7 +537,8 @@ Implement the core multi-agent analysis functions for the AI Act Compliance Assi
   - read shared `AgentState`
   - write structured output back to state
   - add an `agent_trace` event
-  - cite evidence where possible
+  - cite evidence where possible using only `Citation` objects returned by retrieval
+  - never fabricate source titles, page numbers, snippets, citation IDs, or legal references
 - `DocumentFactAgent`:
   - uses extracted uploaded document text
   - extracts required facts
@@ -538,6 +576,7 @@ Implement the core multi-agent analysis functions for the AI Act Compliance Assi
 - [ ] Agents exchange structured state instead of one giant prompt only
 - [ ] Extracted facts cover the required fact labels
 - [ ] Risk and obligations analysis includes citations when possible
+- [ ] Agents only reuse retrieval-provided citations and do not generate citations free-form
 - [ ] Outputs include confidence, assumptions, and uncertainties
 
 ## Dependencies
@@ -552,7 +591,7 @@ Implement the core multi-agent analysis functions for the AI Act Compliance Assi
 - H09-AG-04 Critic agent and analysis endpoint
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Wire the agent workflow into an analysis endpoint and add a critic agent. The backend should run the full analysis from one endpoint, save the result, and return structured JSON for the frontend.
 
@@ -579,9 +618,19 @@ RiskClassificationAgent
 ObligationsGovernanceAgent
 CriticUncertaintyAgent
 assemble AnalysisResult
+CitationVerifier
 save AnalysisResult
 return AnalysisResult
 ```
+
+- Add a deterministic citation verification gate before saving:
+  - collect all citations from facts, sections, obligations, governance notes, and top-level citations
+  - verify each citation against the stored chunk table/corpus index
+  - remove citations that cannot be resolved to stored text
+  - add an uncertainty when a conclusion loses citation support
+  - lower confidence when important citations are removed
+  - save only verified citations in the final `AnalysisResult`
+- The critic agent may flag unsupported reasoning, but the verifier is the authority on whether a citation is real.
 
 - Implement endpoint:
   - `POST /cases/{case_id}/analyze`
@@ -601,6 +650,8 @@ return AnalysisResult
 - [ ] Follow-up questions are generated
 - [ ] Analysis result is saved and matches the shared schema
 - [ ] Agent trace shows named agent steps and short output summaries
+- [ ] Final saved analysis contains only citations verified against stored chunks
+- [ ] Invalid or hallucinated citations are removed deterministically and reflected as uncertainty
 
 ## Dependencies
 
@@ -614,7 +665,7 @@ return AnalysisResult
 - H10-FE-LOVABLE Complete frontend app for Lovable
 - Timebox: external Lovable build
 
-## Prompt To Paste
+## Instructions
 
 Build a complete React + TypeScript frontend for an app called "AI Act Compliance Assistant". This app is for a 24-hour hackathon. The frontend must be something we can download as a ZIP and drop into an existing repo as a `frontend/` folder.
 
@@ -753,11 +804,15 @@ export type DocumentRecord = {
 
 export type Citation = {
   id: string;
+  source_id?: string;
+  chunk_id?: string;
   source_type: SourceType;
   source_title: string;
   document_id?: string;
   location?: string;
   snippet: string;
+  quote_hash?: string;
+  verified?: boolean;
 };
 
 export type ExtractedFact = {
@@ -881,7 +936,7 @@ Design notes:
 - H13-CHAT-01 Follow-up chat and reassessment hooks
 - Timebox: 2 hours
 
-## Prompt To Paste
+## Instructions
 
 Implement the backend follow-up chat API inside a case session. The chat should use saved analysis context, uploaded documents, and AI Act references. It should cite sources where possible and flag new facts for reassessment. The frontend is handled separately by the Lovable frontend ticket.
 
@@ -913,6 +968,8 @@ Implement the backend follow-up chat API inside a case session. The chat should 
   - load latest analysis
   - retrieve relevant uploaded and regulatory chunks
   - answer with citations when relevant
+  - use only citations returned by retrieval
+  - run the deterministic citation verifier before returning assistant citations
   - avoid final legal-advice language
   - if user provides new factual information, store it as a message and set `reassessment_recommended: true`
 - Save both user and assistant messages in SQLite.
@@ -923,6 +980,7 @@ Implement the backend follow-up chat API inside a case session. The chat should 
 - [ ] Backend accepts follow-up questions inside a case
 - [ ] Chat uses uploaded documents, AI Act corpus, and saved analysis context
 - [ ] Chat answers include citations where relevant
+- [ ] Chat citations are verified against stored chunks before being returned
 - [ ] New user-provided facts are stored or flagged for reassessment
 - [ ] Message history endpoint returns stored case messages
 
@@ -938,7 +996,7 @@ Implement the backend follow-up chat API inside a case session. The chat should 
 - H14-QA-01 End-to-end demo validation
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Validate the end-to-end demo path and fix blocking issues only. Do not add new features unless needed to make the demo work.
 
@@ -963,6 +1021,11 @@ Validate the end-to-end demo path and fix blocking issues only. Do not add new f
   - analysis
   - report rendering
   - chat
+- Verify citation grounding:
+  - pick one citation shown in the UI
+  - confirm its `chunk_id` exists in storage
+  - confirm its snippet appears in the stored chunk after normalization
+  - confirm a fake citation ID fails verification
 - Add a short `docs/qa-notes.md` with:
   - commands run
   - what worked
@@ -975,6 +1038,7 @@ Validate the end-to-end demo path and fix blocking issues only. Do not add new f
 - [ ] Analysis completes without manual backend intervention
 - [ ] Report includes citations, uncertainty, and follow-up questions
 - [ ] Follow-up chat works for at least one targeted question
+- [ ] Citation verifier accepts a real citation and rejects a fake citation
 - [ ] QA notes document remaining risks
 
 ## Dependencies
@@ -989,7 +1053,7 @@ Validate the end-to-end demo path and fix blocking issues only. Do not add new f
 - H15-POLISH-01 Import Lovable frontend and final integration polish
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Import the Lovable-generated frontend into this repo and perform final integration polish. Do not redesign the frontend or add broad new features. The goal is to make the downloaded `frontend/` work cleanly against the backend.
 
@@ -1044,7 +1108,7 @@ Import the Lovable-generated frontend into this repo and perform final integrati
 - H16-DEMO-01 Final QA and pitch prep
 - Timebox: 1 hour
 
-## Prompt To Paste
+## Instructions
 
 Prepare the final hackathon demo. Verify the full path, document exactly how to run it, and write a short pitch explaining the agentic workflow.
 
