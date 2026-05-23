@@ -15,3 +15,5 @@ backend/.venv/
 backend/data/**
 !backend/data/
 !backend/data/.gitkeep
+!backend/data/corpus/
+!backend/data/corpus/**
