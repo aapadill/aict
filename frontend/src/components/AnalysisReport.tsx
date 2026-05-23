@@ -1,5 +1,5 @@
-import React from "react";
-import type { AnalysisResult, AssessmentSection, ExtractedFact } from "../types/api";
+import React, { useState } from "react";
+import type { AnalysisResult, AssessmentSection, Citation, ExtractedFact } from "../types/api";
 import EvidencePanel, { CitationItem } from "./EvidencePanel";
 import AgentTrace from "./AgentTrace";
 
@@ -36,19 +36,92 @@ function SectionView({ s }: { s: AssessmentSection }) {
   );
 }
 
-function FactView({ f }: { f: ExtractedFact }) {
+function FactView({
+  f,
+  selectedCitationId,
+  onOpenCitation,
+}: {
+  f: ExtractedFact;
+  selectedCitationId?: string;
+  onOpenCitation: (citation: Citation) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const primaryCitation = f.citations[0];
+
   return (
-    <div className="fact">
-      <div className="row between" style={{ alignItems: "flex-start" }}>
-        <div className="label">{f.label}</div>
+    <div className={`fact ${expanded ? "expanded" : ""}`}>
+      <div className="fact-head">
+        <div>
+          <div className="label">{f.label}</div>
+          <div className="fact-count">{f.citations.length} citation{f.citations.length === 1 ? "" : "s"}</div>
+        </div>
         <span className={`badge ${f.status}`}>{f.status}</span>
       </div>
-      <div className="value">{f.value}</div>
-      {f.citations.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          {f.citations.map((c) => <CitationItem key={c.id} c={c} />)}
+
+      <div className={`value ${expanded ? "" : "fact-summary"}`}>{f.value}</div>
+
+      {primaryCitation ? (
+        <button
+          className={`citation-chip ${selectedCitationId === primaryCitation.id ? "active" : ""}`}
+          onClick={() => onOpenCitation(primaryCitation)}
+        >
+          <span>{primaryCitation.source_title}</span>
+          {primaryCitation.location && <small>{primaryCitation.location}</small>}
+        </button>
+      ) : (
+        <div className="no-citation">No citation attached</div>
+      )}
+
+      <div className="fact-actions">
+        <button className="ghost compact" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? "Show less" : "Show more"}
+        </button>
+        {primaryCitation && (
+          <button className="ghost compact" onClick={() => onOpenCitation(primaryCitation)}>
+            Open citation
+          </button>
+        )}
+      </div>
+
+      {expanded && f.citations.length > 1 && (
+        <div className="fact-more">
+          <div className="label">More citations</div>
+          {f.citations.slice(1).map((c) => (
+            <button
+              key={c.id}
+              className={`citation-chip secondary ${selectedCitationId === c.id ? "active" : ""}`}
+              onClick={() => onOpenCitation(c)}
+            >
+              <span>{c.source_title}</span>
+              {c.location && <small>{c.location}</small>}
+            </button>
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CitationPreview({ citation }: { citation: Citation | null }) {
+  if (!citation) {
+    return (
+      <div className="citation-window empty-window">
+        <div className="label">Citation window</div>
+        <p>Select a cited fact to preview the source context here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="citation-window">
+      <div className="label">Citation window</div>
+      <div className="citation-window-title">{citation.source_title}</div>
+      <div className="citation-window-meta">
+        <span className="badge">{citation.source_type.replace("_", " ")}</span>
+        {citation.location && <span>{citation.location}</span>}
+        {citation.verified === false && <span className="badge low">unverified</span>}
+      </div>
+      <blockquote>{citation.snippet}</blockquote>
     </div>
   );
 }
@@ -82,6 +155,14 @@ export default function AnalysisReport({
 }) {
   const tone = riskTone(a.risk_classification.conclusion);
   const label = riskLabel(a.risk_classification.conclusion);
+  const supportedFacts = a.extracted_facts.filter((f) => f.status !== "missing" && f.citations.length > 0);
+  const factCitations = supportedFacts.flatMap((f) => f.citations);
+  const firstFactCitation = factCitations[0] ?? null;
+  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
+  const citationPreview =
+    selectedCitation && factCitations.some((c) => c.id === selectedCitation.id)
+      ? selectedCitation
+      : firstFactCitation;
 
   return (
     <div className="report-stack">
@@ -117,7 +198,7 @@ export default function AnalysisReport({
         <section className="panel report-metrics">
           <div>
             <span>Facts</span>
-            <strong>{a.extracted_facts.length}</strong>
+            <strong>{supportedFacts.length}</strong>
           </div>
           <div>
             <span>Obligations</span>
@@ -130,13 +211,28 @@ export default function AnalysisReport({
         </section>
       </div>
 
-      <div className="panel">
-        <h2>Extracted facts</h2>
-        {a.extracted_facts.length === 0 ? (
-          <div className="muted small">None extracted.</div>
+      <div className="panel facts-panel">
+        <div className="section-head">
+          <div>
+            <h2>Extracted facts</h2>
+            <p>Compact facts with cited source context.</p>
+          </div>
+        </div>
+        {supportedFacts.length === 0 ? (
+          <div className="muted small">No extracted facts with supporting citations.</div>
         ) : (
-          <div className="facts">
-            {a.extracted_facts.map((f) => <FactView key={f.id} f={f} />)}
+          <div className="facts-layout">
+            <div className="facts">
+              {supportedFacts.map((f) => (
+                <FactView
+                  key={f.id}
+                  f={f}
+                  selectedCitationId={citationPreview?.id}
+                  onOpenCitation={setSelectedCitation}
+                />
+              ))}
+            </div>
+            <CitationPreview citation={citationPreview} />
           </div>
         )}
       </div>

@@ -628,7 +628,8 @@ label {
   padding: 8px;
 }
 
-.doc-row .name {
+.doc-row .name,
+.pending-row .name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -665,6 +666,47 @@ label {
   border-color: var(--primary);
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+.pending-files {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 10px;
+}
+
+.pending-files h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.pending-files p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.pending-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 8px;
+}
+
+.remove-file {
+  color: var(--danger);
 }
 
 /* Badges */
@@ -881,6 +923,17 @@ label {
   padding: 0;
 }
 
+.facts-panel {
+  overflow: visible;
+}
+
+.facts-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 12px;
+  align-items: start;
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -888,21 +941,153 @@ label {
 }
 
 .fact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
-  padding: 11px;
+  padding: 12px;
 }
 
-.fact .label {
+.fact.expanded {
+  background: var(--surface);
+}
+
+.fact-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fact .label,
+.citation-window .label {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
 }
 
+.fact-count {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
 .fact .value {
-  margin-top: 5px;
+  margin-top: 0;
   overflow-wrap: anywhere;
+}
+
+.fact-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.citation-chip {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border-color: #bfd5d0;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.citation-chip:hover:not(:disabled),
+.citation-chip.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.citation-chip span,
+.citation-chip small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-chip small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.citation-chip.secondary {
+  margin-top: 6px;
+}
+
+.fact-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fact-more {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.no-citation {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.citation-window {
+  position: sticky;
+  top: 142px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.citation-window-title {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.citation-window-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.citation-window blockquote {
+  margin: 12px 0 0;
+  border-left: 3px solid var(--primary);
+  color: var(--text);
+  font-style: italic;
+  padding-left: 10px;
+  overflow-wrap: anywhere;
+}
+
+.empty-window {
+  color: var(--text-muted);
+}
+
+.empty-window p {
+  margin: 8px 0 0;
 }
 
 /* Citations */
@@ -1065,6 +1250,7 @@ label {
   .dashboard-layout,
   .workspace-grid,
   .risk-summary-panel,
+  .facts-layout,
   .report-overview {
     grid-template-columns: 1fr;
   }
@@ -1077,6 +1263,10 @@ label {
   .workspace-rail {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  }
+
+  .citation-window {
+    position: static;
   }
 }
 
