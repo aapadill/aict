@@ -1,10 +1,10 @@
-# AI Act Compliance Assistant - Hackathon Tickets
+# aict - Hackathon Tickets
 
 These tickets are written so each one can be pasted into a coding agent as a standalone implementation prompt. Backend/local integration work is timeboxed for the hackathon; the frontend was consolidated into one external Lovable prompt and is now expected to live in the repo as `frontend/`.
 
 ## Global Build Assumptions
 
-- Product: AI Act Compliance Assistant for one AI use case per session.
+- Product: aict, an EU AI Act compliance workspace, for one AI use case per session.
 - Main flow: create case -> upload documents -> parse documents -> retrieve AI Act references -> run multi-agent analysis -> show cited report -> ask follow-up questions.
 - Suggested frontend: React + TypeScript + Vite.
 - Suggested backend: Python + FastAPI.
@@ -84,7 +84,7 @@ type AnalysisResult = {
 
 ## Instructions
 
-Create the project planning artifacts for an AI Act Compliance Assistant hackathon MVP. The app should let a user create one AI-use-case session, upload multiple supporting documents, run a cited EU AI Act first-pass assessment, and ask follow-up questions. Write concise docs that future implementation agents can follow.
+Create the project planning artifacts for aict, an EU AI Act compliance workspace hackathon MVP. The app should let a user create one AI-use-case session, upload multiple supporting documents, run a cited EU AI Act first-pass assessment, and ask follow-up questions. Write concise docs that future implementation agents can follow.
 
 Do not build production features. Focus on the demo path and the minimum architecture needed to prove the app works.
 
@@ -130,7 +130,7 @@ Do not build production features. Focus on the demo path and the minimum archite
 
 ## Instructions
 
-Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI backend with a clean folder structure and CORS configured for the frontend.
+Scaffold the local backend for aict. Build a FastAPI backend with a clean folder structure and CORS configured for the frontend.
 
 ## Implementation Details
 
@@ -188,7 +188,7 @@ Adjust commands to the existing environment if the project already has package m
 
 ## Instructions
 
-Implement local persistence for the AI Act Compliance Assistant backend. Use a simple JSON repository for structured state and the local filesystem for uploaded/extracted files. Do not add SQLite, migrations, SQLAlchemy, SQLModel, or a database schema for the hackathon MVP.
+Implement local persistence for the aict backend. Use a simple JSON repository for structured state and the local filesystem for uploaded/extracted files. Do not add SQLite, migrations, SQLAlchemy, SQLModel, or a database schema for the hackathon MVP.
 
 ## Implementation Details
 
@@ -538,7 +538,7 @@ verify_analysis_citations(result: AnalysisResult) -> AnalysisResult
 
 ## Instructions
 
-Implement the core multi-agent analysis functions for the AI Act Compliance Assistant. The goal is to produce a structured first-pass assessment from uploaded documents and retrieved AI Act references.
+Implement the core multi-agent analysis functions for aict. The goal is to produce a structured first-pass assessment from uploaded documents and retrieved AI Act references.
 
 ## Implementation Details
 
@@ -682,7 +682,7 @@ return AnalysisResult
 
 ## Instructions
 
-Build a complete React + TypeScript frontend for an app called "AI Act Compliance Assistant". This app is for a 24-hour hackathon. The frontend must be something we can download as a ZIP and drop into an existing repo as a `frontend/` folder.
+Build a complete React + TypeScript frontend for an app called "aict". This app is for a 24-hour hackathon. The frontend must be something we can download as a ZIP and drop into an existing repo as a `frontend/` folder.
 
 Important constraints:
 

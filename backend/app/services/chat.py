@@ -14,15 +14,29 @@ from app.storage import JsonRepository, repository
 
 logger = logging.getLogger(__name__)
 
+_CHAT_NOTICE = "This is decision support, not final legal advice."
+_CORE_CHAT_FACTS = ("Purpose", "Outputs", "Deployment context")
+_CASE_GROUNDING_FACTS = (
+    "Purpose",
+    "Sector",
+    "Input data",
+    "Outputs",
+    "Automation level",
+    "Human oversight",
+    "Deployment context",
+)
+
 _SYSTEM_PROMPT = """\
 You are an EU AI Act compliance assistant. You answer follow-up questions based on a saved
 first-pass assessment and retrieved source evidence.
 
 Rules:
 - Ground every claim in the saved assessment or a provided source chunk.
+- Legislation/reference chunks explain legal rules. Do not apply them to the case unless uploaded
+  case facts or the saved assessment support that mapping.
 - Be direct but cautious. Uncertainty is a feature, not a bug.
 - Never give a definitive legal conclusion ("this is compliant" or "this is illegal").
-- If a source chunk supports your point, reference it as [chunk_id].
+- Do not print raw chunk IDs, citation IDs, or source IDs in prose. Citations are attached separately.
 - Keep the answer focused and under 400 words.
 - End every answer with: "This is decision support, not final legal advice."\
 """
@@ -83,21 +97,41 @@ def answer_follow_up(
     repo.save_message(case_id=case_id, role="user", content=text, citations=[])
 
     new_facts = detect_new_facts(text)
-    citations = _retrieve_and_verify(case_id, text, repo=repo)
+    lacks_case_grounding = _analysis_lacks_case_grounding(analysis)
+    asks_general_law = _asks_general_legal_reference(text)
+    citations = _retrieve_and_verify(
+        case_id,
+        text,
+        analysis=analysis,
+        include_reference_sources=_should_include_reference_sources(analysis, text),
+        repo=repo,
+    )
 
-    model = settings.chat_agent_model
-    if model:
-        try:
-            content = _build_llm_answer(model, text, analysis, citations)
-        except Exception as exc:
-            logger.warning("Chat LLM call failed (%s); falling back to template answer.", exc)
+    if lacks_case_grounding:
+        if asks_general_law:
+            citations = [citation for citation in citations if citation.source_type != "uploaded_document"]
+            content = _build_ungrounded_reference_answer(
+                analysis=analysis,
+                citations=citations,
+                new_facts=new_facts,
+            )
+        else:
+            citations = []
+            content = _build_case_gap_answer(analysis=analysis, new_facts=new_facts)
+    else:
+        model = settings.chat_agent_model
+        if model:
+            try:
+                content = _build_llm_answer(model, text, analysis, citations)
+            except Exception as exc:
+                logger.warning("Chat LLM call failed (%s); falling back to template answer.", exc)
+                content = _build_template_answer(
+                    question=text, analysis=analysis, citations=citations, new_facts=new_facts
+                )
+        else:
             content = _build_template_answer(
                 question=text, analysis=analysis, citations=citations, new_facts=new_facts
             )
-    else:
-        content = _build_template_answer(
-            question=text, analysis=analysis, citations=citations, new_facts=new_facts
-        )
 
     reassessment_recommended = bool(new_facts)
     if reassessment_recommended:
@@ -105,6 +139,7 @@ def answer_follow_up(
             "\n\nYou provided new factual information that was not part of the saved assessment. "
             "Upload or confirm source evidence and rerun the assessment before relying on this answer."
         )
+    content = _ensure_chat_notice(_sanitize_chat_content(content))
 
     repo.save_message(
         case_id=case_id,
@@ -229,12 +264,70 @@ def _build_template_answer(
     return "\n\n".join(parts)
 
 
+def _build_case_gap_answer(analysis: AnalysisResult, new_facts: list[str]) -> str:
+    missing_core = _missing_core_facts(analysis)
+    missing = missing_core or analysis.missing_information[:5]
+    parts = [
+        "The saved assessment could not ground an AI Act analysis from the uploaded material.",
+        (
+            "The current record does not establish the basic use-case facts needed to map "
+            "risk, transparency, GPAI, or other obligations to this case."
+        ),
+    ]
+    if missing:
+        parts.append("Missing or uncertain core facts: " + "; ".join(missing) + ".")
+    if new_facts:
+        parts.append(
+            "Your message adds possible new facts, but chat does not update the saved assessment. "
+            "Add those facts to the case material and rerun analysis."
+        )
+    else:
+        parts.append(
+            "Add a plain use-case description with purpose, outputs, deployment context, users, "
+            "input data, automation level, and human oversight, then rerun analysis."
+        )
+    return "\n\n".join(parts)
+
+
+def _build_ungrounded_reference_answer(
+    analysis: AnalysisResult,
+    citations: list[Citation],
+    new_facts: list[str],
+) -> str:
+    missing = _missing_core_facts(analysis)
+    parts = [
+        "I can point to general AI Act reference material, but I cannot apply it to this case yet.",
+        (
+            "The saved assessment lacks enough uploaded-document facts to connect the legal rule "
+            "to the actual system."
+        ),
+    ]
+    if citations:
+        source_titles = _dedupe([citation.source_title for citation in citations])
+        parts.append("Relevant reference source: " + "; ".join(source_titles) + ".")
+    if missing:
+        parts.append("Missing or uncertain core facts: " + "; ".join(missing) + ".")
+    if new_facts:
+        parts.append(
+            "Your message may include new facts. Add them to the case material and rerun analysis "
+            "before relying on a case-specific answer."
+        )
+    return "\n\n".join(parts)
+
+
 # ------------------------------------------------------------------
 # Shared helpers
 # ------------------------------------------------------------------
 
 
-def _retrieve_and_verify(case_id: str, message: str, repo: JsonRepository) -> list[Citation]:
+def _retrieve_and_verify(
+    case_id: str,
+    message: str,
+    *,
+    analysis: AnalysisResult,
+    include_reference_sources: bool,
+    repo: JsonRepository,
+) -> list[Citation]:
     citations = [
         *search_case(
             case_id,
@@ -243,15 +336,136 @@ def _retrieve_and_verify(case_id: str, message: str, repo: JsonRepository) -> li
             limit=3,
             repo=repo,
         ),
-        *search_case(
-            case_id,
-            message,
-            source_types=["legislation", "official_guidance", "national_guidance"],
-            limit=3,
-            repo=repo,
-        ),
     ]
+    if include_reference_sources:
+        citations.extend(
+            search_case(
+                case_id,
+                _reference_query(message, analysis),
+                source_types=["legislation", "official_guidance", "national_guidance"],
+                limit=3,
+                repo=repo,
+            )
+        )
     return _dedupe_citations(verify_citations(citations, repo=repo))
+
+
+def _should_include_reference_sources(analysis: AnalysisResult, message: str) -> bool:
+    if _analysis_lacks_case_grounding(analysis):
+        return _asks_general_legal_reference(message)
+    return _asks_reference_backed_question(message)
+
+
+def _reference_query(message: str, analysis: AnalysisResult) -> str:
+    if _asks_general_legal_reference(message):
+        return message
+    return " ".join(
+        item
+        for item in (
+            message,
+            analysis.risk_classification.conclusion,
+            analysis.ai_system_assessment.conclusion,
+        )
+        if item
+    )
+
+
+def _analysis_lacks_case_grounding(analysis: AnalysisResult) -> bool:
+    fact_by_label = {fact.label: fact for fact in analysis.extracted_facts}
+    grounded_facts = [
+        fact
+        for label, fact in fact_by_label.items()
+        if label in _CASE_GROUNDING_FACTS and fact.status == "found"
+    ]
+    if len(grounded_facts) < 2:
+        return True
+    return not _analysis_has_uploaded_citation(analysis)
+
+
+def _analysis_has_uploaded_citation(analysis: AnalysisResult) -> bool:
+    return any(citation.source_type == "uploaded_document" for citation in _analysis_citations(analysis))
+
+
+def _analysis_citations(analysis: AnalysisResult) -> list[Citation]:
+    citations = list(analysis.citations)
+    for fact in analysis.extracted_facts:
+        citations.extend(fact.citations)
+    citations.extend(analysis.ai_system_assessment.citations)
+    citations.extend(analysis.risk_classification.citations)
+    for section in [*analysis.obligations, *analysis.governance_observations]:
+        citations.extend(section.citations)
+    return citations
+
+
+def _missing_core_facts(analysis: AnalysisResult) -> list[str]:
+    fact_by_label = {fact.label: fact for fact in analysis.extracted_facts}
+    return [
+        label
+        for label in _CORE_CHAT_FACTS
+        if label not in fact_by_label or fact_by_label[label].status != "found"
+    ]
+
+
+def _asks_reference_backed_question(text: str) -> bool:
+    lower = text.lower()
+    return any(
+        term in lower
+        for term in (
+            "ai act",
+            "article",
+            "annex",
+            "law",
+            "legal",
+            "compliant",
+            "compliance",
+            "allowed",
+            "prohibited",
+            "high-risk",
+            "high risk",
+            "risk class",
+            "classification",
+            "obligation",
+            "transparency",
+            "labelling",
+            "labeling",
+            "gpai",
+            "llm",
+            "definition",
+        )
+    )
+
+
+def _asks_general_legal_reference(text: str) -> bool:
+    lower = text.lower()
+    return any(
+        term in lower
+        for term in (
+            "what does article",
+            "article ",
+            "annex ",
+            "what does the ai act",
+            "what does the law",
+            "what does the regulation",
+            "define ai system",
+            "definition of ai system",
+            "ai act definition",
+        )
+    )
+
+
+def _sanitize_chat_content(content: str) -> str:
+    sanitized = re.sub(r"\[[^\]]*\bchunk_[a-z0-9_:-]+[^\]]*\]", "", content, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\bchunk_[a-z0-9_:-]+\b", "source", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\bcitation_[a-z0-9_:-]+\b", "citation", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"[ \t]{2,}", " ", sanitized)
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+    return sanitized.strip()
+
+
+def _ensure_chat_notice(content: str) -> str:
+    if _CHAT_NOTICE.lower() in content.lower():
+        return content
+    return f"{content}\n\n{_CHAT_NOTICE}"
 
 
 def _asks_about_risk(text: str) -> bool:

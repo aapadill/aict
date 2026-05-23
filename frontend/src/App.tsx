@@ -1,69 +1,143 @@
 import React, { useEffect, useState } from "react";
 import CaseDashboard from "./components/CaseDashboard";
 import CaseWorkspace from "./components/CaseWorkspace";
-import { API_BASE_URL, checkHealth, getApiMode, onApiModeChange } from "./api/client";
+
+type Theme = "light" | "dark";
+type Page = "home" | "board";
+
+function getInitialTheme(): Theme {
+  const stored = window.localStorage.getItem("aict-theme");
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 export default function App() {
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
-  const [mode, setMode] = useState(getApiMode());
-  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
-
-  useEffect(() => onApiModeChange(setMode), []);
+  const [page, setPage] = useState<Page>("home");
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
-    checkHealth()
-      .then((h) => setLlmConfigured(h.llm_configured))
-      .catch(() => setLlmConfigured(null)); // backend unreachable — don't show banner
-  }, []);
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("aict-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((current) => current === "dark" ? "light" : "dark");
+  const openBoard = () => {
+    setOpenCaseId(null);
+    setPage("board");
+  };
+  const openHome = () => {
+    setOpenCaseId(null);
+    setPage("home");
+  };
+  const openCase = (caseId: string) => {
+    setOpenCaseId(caseId);
+    setPage("board");
+  };
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="row" style={{ gap: 10 }}>
-          <h1>AI Act Compliance Assistant</h1>
-          <span className="crumbs small">
-            {openCaseId ? <>/ case <span className="mono">{openCaseId}</span></> : "/ cases"}
-          </span>
-        </div>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="small faint">API: <span className="mono">{API_BASE_URL}</span></span>
-          <span className={`status-pill ${mode === "mock" ? "mock" : ""}`}>
-            {mode === "mock" ? "Mock fallback" : "Live"}
-          </span>
+        <button className="brand-block brand-button" onClick={openHome} type="button">
+          <div className="brand-mark">§</div>
+          <div>
+            <h1>aict</h1>
+            <span className="crumbs">
+              {openCaseId
+                ? <>Case <span className="mono">{openCaseId}</span></>
+                : page === "board"
+                  ? "Cases board"
+                  : "EU AI Act compliance workspace"}
+            </span>
+          </div>
+        </button>
+        <div className="topbar-meta">
+          <nav className="topbar-nav" aria-label="Primary navigation">
+            <button
+              className={page === "home" && !openCaseId ? "active" : ""}
+              type="button"
+              onClick={openHome}
+            >
+              Home
+            </button>
+            <button
+              className={page === "board" || openCaseId ? "active" : ""}
+              type="button"
+              onClick={openBoard}
+            >
+              Board
+            </button>
+          </nav>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "white" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "white" : "dark"} mode`}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+          </button>
         </div>
       </header>
       <div className="limitation">
         This is a decision-support draft, not final legal advice.
       </div>
-      {llmConfigured === false && (
-        <div className="llm-setup-banner">
-          <strong>⚠ LLM not configured — analysis will not run.</strong>
-          <span>
-            {" "}Set per-agent model variables in your <code>.env</code> file and restart the backend.
-            See <code>.env.example</code> for provider options (vllm, anthropic, openai).
-          </span>
-          <details style={{ marginTop: 6 }}>
-            <summary style={{ cursor: "pointer" }}>Show required variables</summary>
-            <pre>{[
-              "VLLM_BASE_URL=http://your-server:8000/v1",
-              "VLLM_API_KEY=your-key",
-              "DOCUMENT_FACT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-              "AI_SYSTEM_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-              "RISK_CLASSIFICATION_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-              "OBLIGATIONS_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-              "CRITIC_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-              "CHAT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
-            ].join("\n")}</pre>
-          </details>
-        </div>
-      )}
       <main className="main">
         {openCaseId ? (
-          <CaseWorkspace caseId={openCaseId} onBack={() => setOpenCaseId(null)} />
+          <CaseWorkspace caseId={openCaseId} onBack={openBoard} />
+        ) : page === "board" ? (
+          <CaseDashboard onOpen={openCase} />
         ) : (
-          <CaseDashboard onOpen={setOpenCaseId} />
+          <HomeLanding onOpenBoard={openBoard} />
         )}
       </main>
+    </div>
+  );
+}
+
+function HomeLanding({ onOpenBoard }: { onOpenBoard: () => void }) {
+  return (
+    <div className="landing">
+      <section className="landing-hero">
+        <div>
+          <div className="eyebrow">EU AI Act compliance assistant</div>
+          <h2>aict helps teams turn AI use-case documents into a grounded first-pass review.</h2>
+          <p>
+            Upload product notes, governance material, and supporting evidence. aict extracts the
+            case facts, checks likely AI Act scope and risk signals, maps obligations, and keeps
+            citations tied to stored source chunks.
+          </p>
+          <div className="landing-actions">
+            <button className="primary" onClick={onOpenBoard} type="button">
+              Open cases board
+            </button>
+          </div>
+        </div>
+        <div className="landing-panel">
+          <h3>Built for review sessions</h3>
+          <ul>
+            <li>Collect the use-case description and uploaded evidence.</li>
+            <li>Run a cited first-pass AI Act assessment.</li>
+            <li>Track missing facts, uncertainties, and follow-up questions.</li>
+            <li>Continue in chat without losing source grounding.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section className="landing-strip">
+        <div>
+          <strong>Document grounded</strong>
+          <span>Findings are linked to uploaded files and local reference chunks.</span>
+        </div>
+        <div>
+          <strong>Hackathon simple</strong>
+          <span>Local JSON storage, lightweight retrieval, and clear reports.</span>
+        </div>
+        <div>
+          <strong>Decision support</strong>
+          <span>Designed to surface questions, not replace legal review.</span>
+        </div>
+      </section>
     </div>
   );
 }

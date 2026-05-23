@@ -11,13 +11,6 @@ const GROUPS: { type: SourceType; label: string }[] = [
   { type: "system", label: "System" },
 ];
 
-function compactText(text: string, maxLength = 240): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) return compact;
-  const cutoff = compact.lastIndexOf(" ", maxLength - 3);
-  return `${compact.slice(0, cutoff > 80 ? cutoff : maxLength - 3).replace(/[ ,;:]+$/, "")}...`;
-}
-
 export function CitationItem({ c }: { c: Citation }) {
   return (
     <div className={`citation ${c.source_type}`}>
@@ -29,7 +22,7 @@ export function CitationItem({ c }: { c: Citation }) {
         )}
       </div>
       <div className="title">{c.source_title}</div>
-      {c.snippet && <div className="snippet">"{compactText(c.snippet)}"</div>}
+      {c.snippet && <div className="snippet">"{c.snippet}"</div>}
     </div>
   );
 }

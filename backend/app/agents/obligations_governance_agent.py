@@ -21,6 +21,31 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
+REQUIRED_OBLIGATION_FACTS = ("Purpose", "Outputs", "Deployment context")
+
+TRANSPARENCY_SIGNAL_KEYWORDS = (
+    "chatbot",
+    "interacts with",
+    "interacts with users",
+    "conversational",
+    "generated content",
+    "ai-generated",
+    "synthetic",
+    "deep fake",
+    "summary",
+    "summarizes",
+)
+
+GPAI_SIGNAL_KEYWORDS = (
+    "GPAI",
+    "general-purpose",
+    "LLM",
+    "language model",
+    "foundation model",
+    "ChatGPT",
+    "Claude",
+)
+
 _SYSTEM_PROMPT = """\
 You are an EU AI Act obligations mapping expert.
 
@@ -39,8 +64,9 @@ Cover these categories as governance observation sections:
 1. Documentation and accountability — technical file, purpose statement, data governance, role clarity.
 2. Human oversight, monitoring, and logging — operational controls, override authority, post-deployment monitoring, incident reporting.
 
-For each section, cite only the regulatory chunk_ids you were given. Do not invent citations.
-Set confidence to "low" where the uploaded documents do not confirm the relevant facts.
+Cite uploaded-document chunks for use-case facts and regulatory chunks for legal rules. Do not
+map obligations from legal chunks alone. Set confidence to "low" where the uploaded documents
+do not confirm the relevant facts.
 Keep the output concise and user-facing: prefer short conclusions, short reasoning, and avoid repeating the same uncertainty across sections.
 
 Respond with valid JSON only. No markdown. No text outside the JSON object.\
@@ -93,6 +119,14 @@ class ObligationsGovernanceAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
+        missing_facts = _missing_obligation_facts(state)
+        if missing_facts:
+            return self._run_unclear_guardrail(
+                state,
+                missing_facts,
+                "core_uploaded_facts_missing",
+            )
+
         model = settings.obligations_agent_model
         if model:
             try:
@@ -108,6 +142,14 @@ class ObligationsGovernanceAgent:
     # ------------------------------------------------------------------
 
     def _run_llm(self, state: AgentState, model: str) -> AgentState:
+        missing_facts = _missing_obligation_facts(state)
+        if missing_facts:
+            return self._run_unclear_guardrail(
+                state,
+                missing_facts,
+                "core_uploaded_facts_missing",
+            )
+
         regulatory = retrieve(
             state,
             "provider deployer obligations documentation risk management human oversight transparency GPAI Article 16 26 50 53",
@@ -139,12 +181,20 @@ class ObligationsGovernanceAgent:
         )
         data = llm_service.parse_json(raw)
 
-        state.obligations = [
+        obligations = [
             _section_from_data(s, chunk_map) for s in data.get("obligations", [])[:4]
         ]
-        state.governance_observations = [
+        governance_observations = [
             _section_from_data(s, chunk_map) for s in data.get("governance_observations", [])[:3]
         ]
+        state.obligations = _apply_obligation_section_guardrails(
+            state,
+            obligations,
+            repo=self.repo,
+        )
+        state.governance_observations = _apply_governance_section_guardrails(
+            governance_observations
+        )
         state.follow_up_questions = dedupe(
             [*state.follow_up_questions, *data.get("follow_up_questions", [])[:6]]
         )
@@ -153,7 +203,7 @@ class ObligationsGovernanceAgent:
             state,
             "ObligationsGovernanceAgent",
             "map_obligations_and_governance",
-            f"LLM produced {len(state.obligations)} obligation sections and "
+            f"Produced {len(state.obligations)} obligation sections and "
             f"{len(state.governance_observations)} governance observations.",
         )
         return state
@@ -163,6 +213,14 @@ class ObligationsGovernanceAgent:
     # ------------------------------------------------------------------
 
     def _run_heuristic(self, state: AgentState) -> AgentState:
+        missing_facts = _missing_obligation_facts(state)
+        if missing_facts:
+            return self._run_unclear_guardrail(
+                state,
+                missing_facts,
+                "core_uploaded_facts_missing",
+            )
+
         text = joined_uploaded_text(state, repo=self.repo)
         role_section = self._role_and_obligation_section(state, text)
         transparency_section = self._transparency_section(state, text)
@@ -187,6 +245,45 @@ class ObligationsGovernanceAgent:
         )
         return state
 
+    def _run_unclear_guardrail(
+        self,
+        state: AgentState,
+        missing_facts: list[str],
+        reason: str,
+    ) -> AgentState:
+        state.obligations = [
+            _unclear_obligations_section(
+                [
+                    "Obligation mapping requires uploaded-document evidence for: "
+                    + ", ".join(missing_facts)
+                    + ".",
+                    "Legal corpus provisions were not applied because the uploaded documents do not establish the required use-case facts.",
+                ]
+            )
+        ]
+        state.governance_observations = [
+            _intake_governance_section(
+                [
+                    "Upload a purpose statement, output description, deployment context, role information, and oversight details before mapping obligations.",
+                ]
+            )
+        ]
+        state.follow_up_questions = dedupe(
+            [
+                *state.follow_up_questions,
+                "What is the system intended to do?",
+                "What outputs does it produce and who acts on them?",
+                "Where will the system be deployed and by whom?",
+            ]
+        )
+        add_trace(
+            state,
+            "ObligationsGovernanceAgent",
+            "map_obligations_and_governance",
+            f"Guardrail withheld obligations mapping ({reason}): missing {', '.join(missing_facts)}.",
+        )
+        return state
+
     def _role_and_obligation_section(self, state: AgentState, text: str) -> AssessmentSection:
         provider_signal = contains_any(text, ["develop", "provider", "vendor", "market", "sell", "supply"])
         deployer_signal = contains_any(text, ["use internally", "deployer", "operator", "recruiter", "customer uses"])
@@ -197,13 +294,6 @@ class ObligationsGovernanceAgent:
             limit=2,
             repo=self.repo,
         )
-        regulatory_citations = retrieve(
-            state,
-            "provider deployer obligations high-risk AI system documentation oversight",
-            source_types=["legislation", "official_guidance"],
-            limit=3,
-            repo=self.repo,
-        )
 
         roles: list[str] = []
         if provider_signal:
@@ -212,6 +302,13 @@ class ObligationsGovernanceAgent:
             roles.append("deployer")
 
         if roles:
+            regulatory_citations = retrieve(
+                state,
+                "provider deployer obligations high-risk AI system documentation oversight",
+                source_types=["legislation", "official_guidance"],
+                limit=3,
+                repo=self.repo,
+            )
             conclusion = f"Possible role(s): {', '.join(roles)}."
             confidence = "medium"
             reasoning = (
@@ -222,6 +319,7 @@ class ObligationsGovernanceAgent:
             conclusion = "Provider/deployer roles are not clear from the uploaded documents."
             confidence = "low"
             reasoning = "The current source material does not clearly identify who develops, places on the market, or deploys the system."
+            regulatory_citations = []
 
         return AssessmentSection(
             title="Roles and obligations",
@@ -236,19 +334,20 @@ class ObligationsGovernanceAgent:
     def _transparency_section(self, state: AgentState, text: str) -> AssessmentSection:
         transparency_signal = contains_any(
             text,
-            ["chatbot", "interacts with", "generated content", "synthetic", "deep fake", "summary", "summarizes"],
+            TRANSPARENCY_SIGNAL_KEYWORDS,
         )
-        citations = [
-            *retrieve(state, "chatbot generated content synthetic summary transparency", ["uploaded_document"], 2, self.repo),
-            *retrieve(state, "Article 50 transparency obligations AI-generated content chatbot", ["legislation", "official_guidance"], 3, self.repo),
-        ]
 
         if transparency_signal:
+            citations = [
+                *retrieve(state, "chatbot generated content synthetic summary transparency", ["uploaded_document"], 2, self.repo),
+                *retrieve(state, "Article 50 transparency obligations AI-generated content chatbot", ["legislation", "official_guidance"], 3, self.repo),
+            ]
             conclusion = "Transparency or labelling obligations may be relevant."
             confidence = "medium"
             reasoning = "The uploaded material suggests user interaction or generated content that may need disclosure or labelling."
             uncertainties = ["Confirm exactly who sees the AI output and whether content is presented as AI-generated."]
         else:
+            citations = []
             conclusion = "Transparency or labelling obligations are not established yet."
             confidence = "low"
             reasoning = "The uploaded material does not clearly describe direct user interaction or AI-generated content disclosure needs."
@@ -267,19 +366,20 @@ class ObligationsGovernanceAgent:
     def _gpai_section(self, state: AgentState, text: str) -> AssessmentSection:
         gpai_signal = contains_any(
             text,
-            ["GPAI", "general-purpose", "LLM", "language model", "foundation model", "ChatGPT", "Claude"],
+            GPAI_SIGNAL_KEYWORDS,
         )
-        citations = [
-            *retrieve(state, "GPAI LLM language model foundation model", ["uploaded_document"], 2, self.repo),
-            *retrieve(state, "Article 53 general-purpose AI model obligations technical documentation training content summary", ["legislation", "official_guidance"], 3, self.repo),
-        ]
 
         if gpai_signal:
+            citations = [
+                *retrieve(state, "GPAI LLM language model foundation model", ["uploaded_document"], 2, self.repo),
+                *retrieve(state, "Article 53 general-purpose AI model obligations technical documentation training content summary", ["legislation", "official_guidance"], 3, self.repo),
+            ]
             conclusion = "GPAI or LLM obligations may be relevant to the responsibility chain."
             confidence = "medium"
             reasoning = "The uploaded material suggests use of a general-purpose AI or language-model component."
             uncertainties = ["Confirm the model provider, integration pattern, and available compliance documentation."]
         else:
+            citations = []
             conclusion = "GPAI obligations are not established from the uploaded documents."
             confidence = "low"
             reasoning = "The current material does not clearly identify a general-purpose AI model or LLM component."
@@ -365,3 +465,180 @@ def _section_from_data(data: dict, chunk_map: dict) -> AssessmentSection:
         assumptions=dedupe(data.get("assumptions", []))[:2],
         uncertainties=dedupe(data.get("uncertainties", []))[:2],
     )
+
+
+def _missing_obligation_facts(state: AgentState) -> list[str]:
+    facts = {fact.label: fact for fact in state.facts}
+    missing: list[str] = []
+    for label in REQUIRED_OBLIGATION_FACTS:
+        fact = facts.get(label)
+        if fact is None or fact.status == "missing" or not fact.citations:
+            missing.append(label)
+    return missing
+
+
+def _unclear_obligations_section(uncertainties: list[str]) -> AssessmentSection:
+    return AssessmentSection(
+        title="Obligations",
+        conclusion="Obligations cannot be mapped from the uploaded documents yet.",
+        confidence="low",
+        reasoning=(
+            "The uploaded documents do not establish enough use-case facts to connect the system "
+            "to provider, deployer, transparency, GPAI, or high-risk obligations."
+        ),
+        citations=[],
+        assumptions=["Assessment is based only on uploaded documents and built-in AI Act corpus."],
+        uncertainties=dedupe(uncertainties),
+    )
+
+
+def _intake_governance_section(uncertainties: list[str]) -> AssessmentSection:
+    return AssessmentSection(
+        title="Governance intake",
+        conclusion="Collect basic system evidence before relying on governance recommendations.",
+        confidence="low",
+        reasoning=(
+            "Governance observations require a grounded purpose, outputs, deployment context, "
+            "roles, and controls. Legal reference material alone cannot establish those facts."
+        ),
+        citations=[],
+        assumptions=[],
+        uncertainties=dedupe(uncertainties),
+    )
+
+
+def _apply_obligation_section_guardrails(
+    state: AgentState,
+    sections: list[AssessmentSection],
+    repo: JsonRepository,
+) -> list[AssessmentSection]:
+    uploaded_text = joined_uploaded_text(state, repo=repo)
+    guarded: list[AssessmentSection] = []
+
+    for section in sections:
+        section_text = f"{section.title} {section.conclusion} {section.reasoning}".lower()
+        if any(
+            term in section_text
+            for term in ("article 50", "transparency", "labelling", "labeling", "chatbot", "deep fake", "synthetic content")
+        ) and not contains_any(
+            uploaded_text,
+            TRANSPARENCY_SIGNAL_KEYWORDS,
+        ):
+            guarded.append(_transparency_not_established_section())
+            continue
+
+        if (
+            "gpai" in section_text
+            or "llm" in section_text
+            or "article 53" in section_text
+            or "general-purpose" in section_text
+            or "general purpose" in section_text
+            or "foundation model" in section_text
+        ) and not contains_any(uploaded_text, GPAI_SIGNAL_KEYWORDS):
+            guarded.append(_gpai_not_established_section())
+            continue
+
+        if _has_legal_only_citations(section):
+            guarded.append(_ungrounded_obligation_section(section))
+            continue
+
+        guarded.append(section)
+
+    return _dedupe_sections(guarded)
+
+
+def _apply_governance_section_guardrails(
+    sections: list[AssessmentSection],
+) -> list[AssessmentSection]:
+    guarded: list[AssessmentSection] = []
+    for section in sections:
+        if _has_legal_only_citations(section):
+            guarded.append(_ungrounded_governance_section(section))
+        else:
+            guarded.append(section)
+    return _dedupe_sections(guarded)
+
+
+def _transparency_not_established_section() -> AssessmentSection:
+    return AssessmentSection(
+        title="Transparency and labelling",
+        conclusion="Transparency or labelling obligations are not established yet.",
+        confidence="low",
+        reasoning=(
+            "The uploaded material does not clearly describe direct interaction with natural "
+            "persons or AI-generated content disclosure needs."
+        ),
+        citations=[],
+        assumptions=[],
+        uncertainties=["Confirm whether the system interacts directly with natural persons or generates synthetic content."],
+    )
+
+
+def _gpai_not_established_section() -> AssessmentSection:
+    return AssessmentSection(
+        title="GPAI obligations",
+        conclusion="GPAI obligations are not established from the uploaded documents.",
+        confidence="low",
+        reasoning="The uploaded material does not clearly identify a general-purpose AI model or LLM component.",
+        citations=[],
+        assumptions=[],
+        uncertainties=["Ask whether any third-party GPAI or LLM component is used."],
+    )
+
+
+def _ungrounded_obligation_section(section: AssessmentSection) -> AssessmentSection:
+    return AssessmentSection(
+        title=section.title or "Obligation",
+        conclusion="This obligation cannot be applied from the uploaded documents yet.",
+        confidence="low",
+        reasoning=(
+            "The section referenced legal material, but no uploaded-document evidence established "
+            "the factual trigger for applying that obligation."
+        ),
+        citations=[],
+        assumptions=[],
+        uncertainties=dedupe(
+            [
+                *section.uncertainties,
+                "Upload source evidence for the use-case trigger before applying this obligation.",
+            ]
+        ),
+    )
+
+
+def _ungrounded_governance_section(section: AssessmentSection) -> AssessmentSection:
+    return AssessmentSection(
+        title=section.title or "Governance observation",
+        conclusion="This governance observation needs uploaded-document support.",
+        confidence="low",
+        reasoning=(
+            "The section referenced legal material, but no uploaded-document evidence established "
+            "the system facts needed for this observation."
+        ),
+        citations=[],
+        assumptions=[],
+        uncertainties=dedupe(
+            [
+                *section.uncertainties,
+                "Upload source evidence for this governance control or gap.",
+            ]
+        ),
+    )
+
+
+def _has_legal_only_citations(section: AssessmentSection) -> bool:
+    return bool(section.citations) and not any(
+        citation.source_type == "uploaded_document" for citation in section.citations
+    )
+
+
+def _dedupe_sections(sections: list[AssessmentSection]) -> list[AssessmentSection]:
+    seen: set[str] = set()
+    result: list[AssessmentSection] = []
+    for section in sections:
+        key = section.title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(section)
+    return result

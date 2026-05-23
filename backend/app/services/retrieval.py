@@ -99,6 +99,8 @@ def index_corpus(
 
     for source_path in sorted(directory.glob("*.md")):
         metadata, body = _read_corpus_file(source_path)
+        if _is_placeholder_corpus_source(source_path, metadata, body):
+            continue
         source_id = metadata.get("source_id") or source_path.stem
         chunks = chunk_text(
             body,
@@ -134,6 +136,7 @@ def search_case(
 
     allowed_source_types = set(source_types or [])
     chunks = repo.list_chunks(case_id) + repo.list_chunks(CORPUS_CASE_ID)
+    chunks = [chunk for chunk in chunks if not _is_placeholder_corpus_chunk(chunk)]
     if allowed_source_types:
         chunks = [chunk for chunk in chunks if chunk.sourcetype in allowed_source_types]
 
@@ -224,6 +227,35 @@ def _read_corpus_file(path: Path) -> tuple[dict[str, str], str]:
         metadata[normalized_key] = value.strip()
 
     return metadata, body.strip()
+
+
+def _is_placeholder_corpus_source(
+    path: Path,
+    metadata: dict[str, str],
+    body: str,
+) -> bool:
+    haystack = "\n".join(
+        [
+            path.name,
+            metadata.get("source_id", ""),
+            metadata.get("source_title", ""),
+            body[:500],
+        ]
+    ).lower()
+    return "placeholder" in haystack or "todo:" in haystack
+
+
+def _is_placeholder_corpus_chunk(chunk: Chunk) -> bool:
+    if chunk.caseid != CORPUS_CASE_ID:
+        return False
+    haystack = "\n".join(
+        [
+            chunk.sourceid or "",
+            chunk.sourcetitle,
+            chunk.text[:500],
+        ]
+    ).lower()
+    return "placeholder" in haystack or "todo:" in haystack
 
 
 def _split_extracted_document_sections(text: str) -> list[tuple[str | None, str]]:

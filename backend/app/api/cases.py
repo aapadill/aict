@@ -21,6 +21,11 @@ class CaseCreateRequest(BaseModel):
     description: str | None = None
 
 
+class CaseUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
+
 class DocumentResponse(BaseModel):
     id: str
     case_id: str
@@ -203,6 +208,55 @@ def get_case(
     return _case_detail_response(case, repo.list_documents(case_id))
 
 
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> None:
+    if not repo.delete_case(case_id):
+        raise _api_error(
+            status.HTTP_404_NOT_FOUND,
+            "case_not_found",
+            f"Case '{case_id}' was not found.",
+        )
+
+
+@router.patch("/{case_id}", response_model=CaseResponse)
+def update_case(
+    case_id: str,
+    request: CaseUpdateRequest,
+    repo: JsonRepository = Depends(get_repository),
+) -> CaseResponse:
+    existing_case = _require_case(repo, case_id)
+    title = request.title.strip() if request.title is not None else None
+    description = request.description.strip() if request.description is not None else None
+    if request.title is not None and not title:
+        raise _api_error(
+            status.HTTP_400_BAD_REQUEST,
+            "invalid_title",
+            "Case title cannot be blank.",
+        )
+    if (
+        request.description is not None
+        and repo.get_latest_analysis(case_id) is not None
+        and description != (existing_case.description or "")
+    ):
+        raise _api_error(
+            status.HTTP_409_CONFLICT,
+            "case_locked",
+            "Use-case description is locked after analysis has been generated.",
+        )
+
+    case = repo.update_case(case_id, title=title, description=description)
+    if case is None:
+        raise _api_error(
+            status.HTTP_404_NOT_FOUND,
+            "case_not_found",
+            f"Case '{case_id}' was not found.",
+        )
+    return _case_response(case)
+
+
 @router.post(
     "/{case_id}/documents",
     response_model=list[DocumentResponse],
@@ -214,6 +268,12 @@ async def upload_documents(
     repo: JsonRepository = Depends(get_repository),
 ) -> list[DocumentResponse]:
     _require_case(repo, case_id)
+    if repo.get_latest_analysis(case_id) is not None:
+        raise _api_error(
+            status.HTTP_409_CONFLICT,
+            "case_locked",
+            "Document uploads are locked after analysis has been generated.",
+        )
     filenames = _validate_uploads(files)
     case_upload_dir = repo.upload_dir / case_id
 

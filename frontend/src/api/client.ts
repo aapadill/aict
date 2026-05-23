@@ -38,11 +38,9 @@ function setMode(m: ApiMode) {
 
 export class ApiError extends Error {
   status?: number;
-  code?: string;
-  constructor(message: string, status?: number, code?: string) {
+  constructor(message: string, status?: number) {
     super(message);
     this.status = status;
-    this.code = code;
   }
 }
 
@@ -67,21 +65,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     let detail = res.statusText;
-    let code: string | undefined;
     try {
       const data = await res.json();
-      if (data?.detail && typeof data.detail === "object") {
-        detail = data.detail.message || JSON.stringify(data.detail);
-        code = data.detail.error;
-      } else {
-        detail = data?.detail || data?.message || JSON.stringify(data);
-      }
+      detail = data?.detail || data?.message || JSON.stringify(data);
     } catch {
       try {
         detail = (await res.text()) || detail;
       } catch {}
     }
-    throw new ApiError(`HTTP ${res.status}: ${detail}`, res.status, code);
+    throw new ApiError(`HTTP ${res.status}: ${detail}`, res.status);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -133,6 +125,47 @@ export function createCase(input: { title: string; description?: string }): Prom
   );
 }
 
+export function updateCase(
+  caseId: string,
+  input: { title?: string; description?: string },
+): Promise<Case> {
+  return withFallback(
+    () => request<Case>(`/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(input) }),
+    () => {
+      const index = mockState.cases.findIndex((x) => x.id === caseId);
+      if (index === -1) throw new ApiError("Case not found", 404);
+      if (input.description !== undefined && mockState.analysis[caseId]) {
+        const currentDescription = mockState.cases[index].description ?? "";
+        if (input.description !== currentDescription) {
+          throw new ApiError("Case is locked after analysis", 409);
+        }
+      }
+      const updated = {
+        ...mockState.cases[index],
+        ...input,
+        description: input.description ?? mockState.cases[index].description,
+        updated_at: new Date().toISOString(),
+      };
+      mockState.cases[index] = updated;
+      return updated;
+    }
+  );
+}
+
+export function deleteCase(caseId: string): Promise<void> {
+  return withFallback(
+    () => request<void>(`/cases/${caseId}`, { method: "DELETE" }),
+    () => {
+      const index = mockState.cases.findIndex((x) => x.id === caseId);
+      if (index === -1) throw new ApiError("Case not found", 404);
+      mockState.cases.splice(index, 1);
+      delete mockState.docs[caseId];
+      delete mockState.analysis[caseId];
+      delete mockState.msgs[caseId];
+    }
+  );
+}
+
 export function listCases(): Promise<Case[]> {
   return withFallback(
     () => request<Case[]>("/cases"),
@@ -159,6 +192,9 @@ export function uploadDocuments(caseId: string, files: File[]): Promise<Document
       return request<DocumentRecord[]>(`/cases/${caseId}/documents`, { method: "POST", body: fd });
     },
     () => {
+      if (mockState.analysis[caseId]) {
+        throw new ApiError("Document uploads are locked after analysis", 409);
+      }
       const docs = files.map<DocumentRecord>((f) => ({
         id: uid("doc"),
         case_id: caseId,
@@ -250,10 +286,6 @@ export function sendChatMessage(caseId: string, message: string): Promise<ChatRe
       return response;
     }
   );
-}
-
-export async function checkHealth(): Promise<{ status: string; llm_configured: boolean }> {
-  return request("/health");
 }
 
 export { API_BASE_URL };

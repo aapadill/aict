@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from app.agents import ai_system_definition_agent as ai_system_module
+from app.agents import risk_classification_agent as risk_module
 from app.agents import (
     AISystemDefinitionAgent,
     DocumentFactAgent,
@@ -89,6 +91,118 @@ def test_agents_record_uncertainty_when_docs_are_sparse(tmp_path: Path) -> None:
     assert state.risk_classification is not None
     assert state.risk_classification.confidence == "low"
     assert state.risk_classification.uncertainties
+
+
+def test_obligations_do_not_apply_legal_corpus_without_use_case_facts(tmp_path: Path) -> None:
+    repo = JsonRepository(data_dir=tmp_path / "data")
+    repo.initialize()
+    case = repo.create_case("ASCII art", None)
+    source_path = repo.upload_dir / case.id / "brief.txt"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        r"""
+        /\_/\
+        ( o.o )
+         > ^ <
+        zibble worp glint paperclip moon toast.
+        """,
+        encoding="utf-8",
+    )
+    repo.save_document(case_id=case.id, filename="brief.txt", file_path=source_path)
+    index_case(case.id, repo=repo)
+    state = AgentState(case_id=case.id)
+
+    DocumentFactAgent(repo=repo).run(state)
+    AISystemDefinitionAgent(repo=repo).run(state)
+    RiskClassificationAgent(repo=repo).run(state)
+    ObligationsGovernanceAgent(repo=repo).run(state)
+
+    assert state.obligations
+    assert state.obligations[0].title == "Obligations"
+    assert state.obligations[0].confidence == "low"
+    assert state.obligations[0].citations == []
+    assert state.governance_observations[0].title == "Governance intake"
+    assert state.governance_observations[0].citations == []
+    assert all(section.citations == [] for section in state.obligations)
+    assert all(section.citations == [] for section in state.governance_observations)
+    assert any(
+        event.agent == "ObligationsGovernanceAgent"
+        and "Guardrail withheld obligations mapping" in event.output_summary
+        for event in state.agent_trace
+    )
+
+
+def test_risk_llm_output_is_downgraded_without_use_case_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo, case_id = _sample_repo(tmp_path)
+    index_case(case_id, repo=repo)
+    state = AgentState(case_id=case_id)
+    DocumentFactAgent(repo=repo).run(state)
+
+    def overreaching_completion(*args, **kwargs) -> str:
+        return """
+        {
+          "conclusion": "HIGH-RISK due to migration, asylum and border control",
+          "confidence": "high",
+          "reasoning": "The use case involves remote biometric identification for migration and border control.",
+          "uncertainties": [],
+          "use_case_fact_chunk_ids": [],
+          "legal_rule_chunk_ids": [],
+          "unsupported_claims": []
+        }
+        """
+
+    monkeypatch.setattr(risk_module.llm_service, "complete", overreaching_completion)
+
+    RiskClassificationAgent(repo=repo)._run_llm(state, "test:model")
+    risk = state.risk_classification
+    assert risk is not None
+    risk_text = f"{risk.conclusion} {risk.reasoning}".lower()
+
+    assert risk.conclusion == "Risk classification is unclear from the uploaded documents."
+    assert risk.confidence == "low"
+    assert risk.citations == []
+    assert all(
+        phrase not in risk_text
+        for phrase in ("remote biometric", "migration", "asylum", "border control")
+    )
+    assert any("requires both uploaded-document fact evidence" in item for item in risk.uncertainties)
+
+
+def test_ai_system_llm_output_is_downgraded_without_use_case_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo, case_id = _sample_repo(tmp_path)
+    index_case(case_id, repo=repo)
+    state = AgentState(case_id=case_id)
+    DocumentFactAgent(repo=repo).run(state)
+
+    def overreaching_completion(*args, **kwargs) -> str:
+        return """
+        {
+          "conclusion": "This is an AI system in scope of Article 3(1)",
+          "confidence": "high",
+          "reasoning": "The legal corpus defines AI systems as machine-based systems with autonomy.",
+          "uncertainties": [],
+          "use_case_fact_chunk_ids": [],
+          "legal_rule_chunk_ids": [],
+          "unsupported_claims": []
+        }
+        """
+
+    monkeypatch.setattr(ai_system_module.llm_service, "complete", overreaching_completion)
+
+    AISystemDefinitionAgent(repo=repo)._run_llm(state, "test:model")
+    assessment = state.ai_system_assessment
+    assert assessment is not None
+
+    assert assessment.conclusion == "The uploaded documents do not yet establish whether this is an AI system."
+    assert assessment.confidence == "low"
+    assert assessment.citations == []
+    assert any("requires both uploaded-document fact evidence" in item for item in assessment.uncertainties)
 
 
 def _sample_repo(tmp_path: Path) -> tuple[JsonRepository, str]:

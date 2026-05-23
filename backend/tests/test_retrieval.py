@@ -77,6 +77,40 @@ def test_search_case_returns_source_metadata_and_snippet(tmp_path: Path) -> None
     assert all(citation.quote_hash for citation in citations)
 
 
+def test_placeholder_corpus_sources_are_not_indexed_or_retrieved(tmp_path: Path) -> None:
+    repo, case_id, corpus_dir = _repo_with_case_document_and_corpus(tmp_path)
+    (corpus_dir / "guidance_placeholder.md").write_text(
+        "\n".join(
+            [
+                "Source-ID: placeholder_guidance",
+                "Source-Type: official_guidance",
+                "Source-Title: Placeholder guidance source",
+                "---",
+                "# Placeholder guidance",
+                "",
+                "TODO: Ingest the real guidance later.",
+                "",
+                "This placeholder text should never be returned as a citation.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    index_case(case_id, repo=repo, corpus_dir=corpus_dir)
+    corpus_chunks = repo.list_chunks(CORPUS_CASE_ID)
+    citations = search_case(
+        case_id,
+        "placeholder guidance TODO",
+        source_types=["official_guidance"],
+        repo=repo,
+        corpus_dir=corpus_dir,
+        limit=5,
+    )
+
+    assert all(chunk.sourceid != "placeholder_guidance" for chunk in corpus_chunks)
+    assert citations == []
+
+
 def test_verify_citation_accepts_real_citation_and_rejects_fake(tmp_path: Path) -> None:
     repo, case_id, corpus_dir = _repo_with_case_document_and_corpus(tmp_path)
     real_citation = search_case(

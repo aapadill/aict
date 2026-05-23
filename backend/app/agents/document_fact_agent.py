@@ -116,7 +116,7 @@ class DocumentFactAgent:
             state,
             "DocumentFactAgent",
             "extract_facts",
-            f"LLM extracted {found_count} facts and marked {len(missing)} missing.",
+            f"Extracted {found_count} facts and marked {len(missing)} missing.",
         )
         return state
 
