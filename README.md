@@ -79,13 +79,13 @@ aict/
 │   │   └── storage/         JSON repository + filesystem helpers
 │   ├── tests/
 │   ├── data/                local JSON state, uploads, extracted text, indexes (gitignored)
-│   └── requirements.txt
-├── frontend/                Imported from Lovable export (not in repo yet)
+│   └── pyproject.toml
+├── frontend/                Vite + React + TypeScript app
 ├── .env.example
 └── .gitignore
 ```
 
-The `frontend/` folder is not generated in this repository — it will be downloaded from Lovable and dropped in at the repo root. Until then the backend runs standalone and the `/health` endpoint can be verified with `curl`.
+The backend runs standalone and the `/health` endpoint can be verified with `curl`.
 
 ## Local JSON Repository
 
@@ -116,7 +116,39 @@ backend/data/
 
 Use atomic writes for JSON updates: write to a temp file in the same directory, then replace the target file. The citation verifier should resolve citations to stored chunk IDs and validate snippets against the stored chunk text.
 
-## Expected Local Run Commands
+## Docker Run Commands
+
+Start the full app:
+
+```bash
+docker compose up --build
+```
+
+If ports `8000` or `5173` are already busy:
+
+```bash
+BACKEND_PORT=8001 FRONTEND_PORT=5174 VITE_API_BASE_URL=http://localhost:8001 CORS_ORIGINS=http://localhost:5174,http://127.0.0.1:5174 docker compose up --build
+```
+
+Then open:
+
+- Frontend: `http://127.0.0.1:5173`
+- Backend API: `http://127.0.0.1:8000`
+- Backend health check: `http://127.0.0.1:8000/health`
+
+Stop it with:
+
+```bash
+docker compose down
+```
+
+The backend keeps local state in the `backend-data` Docker volume. To wipe local demo state:
+
+```bash
+docker compose down -v
+```
+
+## Manual Local Run Commands
 
 These commands describe the intended local developer flow after the backend and frontend tickets are implemented.
 
@@ -127,7 +159,7 @@ cp .env.example .env
 cd backend
 python -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 

@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      DATA_DIR: /app/runtime-data
+      STATE_DIR: /app/runtime-data/state
+      UPLOAD_DIR: /app/runtime-data/uploads
+      EXTRACTED_DIR: /app/runtime-data/extracted
+      INDEX_DIR: /app/runtime-data/index
+      AI_ACT_CORPUS_DIR: /app/data/corpus
+      EMBEDDING_PROVIDER: local
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - backend-data:/app/runtime-data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  backend-data:
