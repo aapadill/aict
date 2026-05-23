@@ -56,6 +56,10 @@ class Settings:
     llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "mock"))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    vllm_base_url: str = field(
+        default_factory=lambda: os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
+    )
+    vllm_api_key: str = field(default_factory=lambda: os.getenv("VLLM_API_KEY", ""))
     embedding_provider: str = field(
         default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "local")
     )

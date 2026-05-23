@@ -32,8 +32,10 @@ def complete(
         return _call_anthropic(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
     if provider == "openai":
         return _call_openai(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
+    if provider == "vllm":
+        return _call_vllm(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
     raise ValueError(
-        f"Unknown LLM provider: {provider!r}. Supported: anthropic, openai."
+        f"Unknown LLM provider: {provider!r}. Supported: anthropic, openai, vllm."
     )
 
 
@@ -106,5 +108,47 @@ def _call_openai(
         kwargs["response_format"] = {"type": "json_object"}
 
     client = openai.OpenAI(api_key=settings.openai_api_key)
+    response = client.chat.completions.create(**kwargs)
+    return response.choices[0].message.content
+
+
+def _call_vllm(
+    model_id: str,
+    system: str,
+    user: str,
+    *,
+    json_mode: bool,
+    max_tokens: int,
+) -> str:
+    """Call a vLLM server via its OpenAI-compatible API."""
+    try:
+        import openai
+    except ImportError as exc:
+        raise ImportError("Install the 'openai' package: pip install openai") from exc
+
+    from app.core.config import settings  # late import avoids circular refs at startup
+
+    kwargs: dict[str, Any] = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+    }
+    # vLLM supports json_object mode; embed the instruction in the system prompt as well
+    # to be safe with models that may not fully honour the response_format parameter.
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+        kwargs["messages"][0]["content"] = (
+            system
+            + "\n\nRespond with valid JSON only. "
+            "Do not include markdown fences, prose, or any text outside the JSON object."
+        )
+
+    client = openai.OpenAI(
+        api_key=settings.vllm_api_key,
+        base_url=settings.vllm_base_url,
+    )
     response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content
