@@ -13,6 +13,13 @@ services:
       INDEX_DIR: /app/runtime-data/index
       AI_ACT_CORPUS_DIR: /app/data/corpus
       EMBEDDING_PROVIDER: local
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://localhost:8000/v1}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      RUNTIME_ANALYST_MODEL: ${RUNTIME_ANALYST_MODEL:-}
+      RUNTIME_SIGNAL_REVIEW_LIMIT: ${RUNTIME_SIGNAL_REVIEW_LIMIT:-5}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

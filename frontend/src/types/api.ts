@@ -91,3 +91,87 @@ export type ChatResponse = {
   new_facts_detected: string[];
   reassessment_recommended: boolean;
 };
+
+export type RuntimeSignal = {
+  kind: string;
+  value: string;
+  severity: "low" | "medium" | "high";
+  evidence: string;
+};
+
+export type RuntimeNode = {
+  id: string;
+  label: string;
+  kind: string;
+  severity: "low" | "medium" | "high";
+};
+
+export type RuntimeEdge = {
+  source: string;
+  target: string;
+  label: string;
+};
+
+export type RuntimeEvent = {
+  time: string;
+  actor: string;
+  action: string;
+  target: string;
+  severity: "low" | "medium" | "high";
+};
+
+export type RuntimeInspection = {
+  filename: string;
+  size_bytes: number;
+  sha256: string;
+  file_type: string;
+  entropy: number;
+  risk_score: number;
+  verdict: "quiet" | "watch" | "hot";
+  analysis_mode: "heuristic" | "ai";
+  evaluation_basis: string;
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  signals: RuntimeSignal[];
+  nodes: RuntimeNode[];
+  edges: RuntimeEdge[];
+  events: RuntimeEvent[];
+  analysis: string[];
+  ai_act: RuntimeAIActAssessment;
+  signal_reviews: RuntimeSignalReview[];
+};
+
+export type RuntimeSignalReview = {
+  signal_index: number;
+  worker: string;
+  kind: string;
+  value: string;
+  severity: "low" | "medium" | "high";
+  review_mode: "heuristic" | "ai";
+  verdict: "benign" | "watch" | "hot";
+  eu_ai_act_relevance: "none" | "possible" | "likely";
+  note: string;
+};
+
+export type RuntimeAIActAssessment = {
+  relevance: "none" | "possible" | "likely";
+  risk_hint:
+    | "not_assessable"
+    | "minimal_or_unclear"
+    | "limited_risk_possible"
+    | "high_risk_possible"
+    | "prohibited_review_needed";
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  triggers: string[];
+  follow_up_questions: string[];
+  basis: string;
+};
+
+export type RuntimeAIStatus = {
+  enabled: boolean;
+  ready: boolean;
+  provider?: string | null;
+  model?: string | null;
+  message: string;
+};

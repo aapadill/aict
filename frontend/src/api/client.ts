@@ -4,6 +4,8 @@ import type {
   ChatMessage,
   ChatResponse,
   DocumentRecord,
+  RuntimeAIStatus,
+  RuntimeInspection,
 } from "../types/api";
 import {
   mockAnalysis,
@@ -242,6 +244,16 @@ export function sendChatMessage(caseId: string, message: string): Promise<ChatRe
       return response;
     }
   );
+}
+
+export function inspectRuntimeArtifact(file: File): Promise<RuntimeInspection> {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  return request<RuntimeInspection>("/runtime/inspect", { method: "POST", body: fd });
+}
+
+export function getRuntimeAIStatus(): Promise<RuntimeAIStatus> {
+  return request<RuntimeAIStatus>("/runtime/ai-status");
 }
 
 export { API_BASE_URL };

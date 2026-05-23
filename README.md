@@ -148,6 +148,20 @@ The backend keeps local state in the `backend-data` Docker volume. To wipe local
 docker compose down -v
 ```
 
+Optional runtime AI analyst:
+
+```bash
+RUNTIME_ANALYST_MODEL=openai:gpt-4o-mini OPENAI_API_KEY=... docker compose up --build
+```
+
+Gemini also works:
+
+```bash
+RUNTIME_ANALYST_MODEL=gemini:gemini-2.5-flash GEMINI_API_KEY=... docker compose up --build
+```
+
+Without `RUNTIME_ANALYST_MODEL`, the runtime cockpit uses local heuristic scoring.
+
 ## Manual Local Run Commands
 
 These commands describe the intended local developer flow after the backend and frontend tickets are implemented.

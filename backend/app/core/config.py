@@ -56,6 +56,7 @@ class Settings:
     llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "mock"))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     vllm_base_url: str = field(
         default_factory=lambda: os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
     )
@@ -82,6 +83,12 @@ class Settings:
     )
     chat_agent_model: str = field(
         default_factory=lambda: os.getenv("CHAT_AGENT_MODEL", "")
+    )
+    runtime_analyst_model: str = field(
+        default_factory=lambda: os.getenv("RUNTIME_ANALYST_MODEL", "")
+    )
+    runtime_signal_review_limit: int = field(
+        default_factory=lambda: int(os.getenv("RUNTIME_SIGNAL_REVIEW_LIMIT", "5"))
     )
 
     def ensure_dirs(self) -> None:

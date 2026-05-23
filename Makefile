@@ -1,4 +1,4 @@
-.PHONY: help up up-alt down clean build rebuild logs ps health test-backend
+.PHONY: help up up-alt re re-alt down clean build rebuild logs ps health test-backend
 
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
@@ -9,6 +9,8 @@ help:
 	@printf "Targets:\n"
 	@printf "  make up            Start backend and frontend with Docker Compose\n"
 	@printf "  make up-alt        Start on ports 8001 and 5174\n"
+	@printf "  make re            Restart backend and frontend with Docker Compose\n"
+	@printf "  make re-alt        Restart on ports 8001 and 5174\n"
 	@printf "  make down          Stop containers\n"
 	@printf "  make clean         Stop containers and remove demo data volume\n"
 	@printf "  make build         Build Docker images\n"
@@ -23,6 +25,13 @@ up:
 
 up-alt:
 	$(MAKE) up BACKEND_PORT=8001 FRONTEND_PORT=5174
+
+re:
+	$(MAKE) down
+	$(MAKE) up BACKEND_PORT=$(BACKEND_PORT) FRONTEND_PORT=$(FRONTEND_PORT) VITE_API_BASE_URL=$(VITE_API_BASE_URL) CORS_ORIGINS=$(CORS_ORIGINS)
+
+re-alt:
+	$(MAKE) re BACKEND_PORT=8001 FRONTEND_PORT=5174
 
 down:
 	docker compose down

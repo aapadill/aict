@@ -16,7 +16,8 @@ def complete(
     """Call an LLM provider and return the response text.
 
     ``model`` must be ``provider:model-id``, e.g.
-    ``anthropic:claude-haiku-4-5-20251001`` or ``openai:gpt-4o-mini``.
+    ``anthropic:claude-haiku-4-5-20251001``, ``openai:gpt-4o-mini``,
+    or ``gemini:gemini-2.5-flash``.
 
     When ``json_mode=True`` the response is expected to be valid JSON.
     For Anthropic the instruction is embedded in the system prompt; for
@@ -32,10 +33,12 @@ def complete(
         return _call_anthropic(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
     if provider == "openai":
         return _call_openai(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
+    if provider == "gemini":
+        return _call_gemini(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
     if provider == "vllm":
         return _call_vllm(model_id, system, user, json_mode=json_mode, max_tokens=max_tokens)
     raise ValueError(
-        f"Unknown LLM provider: {provider!r}. Supported: anthropic, openai, vllm."
+        f"Unknown LLM provider: {provider!r}. Supported: anthropic, openai, gemini, vllm."
     )
 
 
@@ -110,6 +113,40 @@ def _call_openai(
     client = openai.OpenAI(api_key=settings.openai_api_key)
     response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content
+
+
+def _call_gemini(
+    model_id: str,
+    system: str,
+    user: str,
+    *,
+    json_mode: bool,
+    max_tokens: int,
+) -> str:
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:
+        raise ImportError("Install the 'google-genai' package: pip install google-genai") from exc
+
+    from app.core.config import settings  # late import avoids circular refs at startup
+
+    prompt = f"{system}\n\nUser input:\n{user}"
+    config_kwargs: dict[str, Any] = {"max_output_tokens": max_tokens}
+    if json_mode:
+        prompt += (
+            "\n\nRespond with valid JSON only. "
+            "Do not include markdown fences, prose, or any text outside the JSON object."
+        )
+        config_kwargs["response_mime_type"] = "application/json"
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model=model_id,
+        contents=prompt,
+        config=types.GenerateContentConfig(**config_kwargs),
+    )
+    return response.text or ""
 
 
 def _call_vllm(
