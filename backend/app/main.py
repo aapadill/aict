@@ -5,10 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.core.config import settings
+from app.storage import initialize_storage
 
 
 def create_app() -> FastAPI:
     settings.ensure_dirs()
+    initialize_storage()
 
     app = FastAPI(
         title="AI Act Compliance Assistant",

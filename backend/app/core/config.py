@@ -38,8 +38,8 @@ class Settings:
         )
     )
     data_dir: Path = field(default_factory=lambda: _resolve(os.getenv("DATA_DIR", "backend/data")))
-    sqlite_path: Path = field(
-        default_factory=lambda: _resolve(os.getenv("SQLITE_PATH", "backend/data/app.db"))
+    state_dir: Path = field(
+        default_factory=lambda: _resolve(os.getenv("STATE_DIR", "backend/data/state"))
     )
     upload_dir: Path = field(
         default_factory=lambda: _resolve(os.getenv("UPLOAD_DIR", "backend/data/uploads"))
@@ -62,11 +62,11 @@ class Settings:
     def ensure_dirs(self) -> None:
         for path in (
             self.data_dir,
+            self.state_dir,
             self.upload_dir,
             self.extracted_dir,
             self.index_dir,
             self.ai_act_corpus_dir,
-            self.sqlite_path.parent,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

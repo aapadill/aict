@@ -8,7 +8,7 @@ These tickets are written so each one can be pasted into a coding agent as a sta
 - Main flow: create case -> upload documents -> parse documents -> retrieve AI Act references -> run multi-agent analysis -> show cited report -> ask follow-up questions.
 - Suggested frontend: React + TypeScript + Vite.
 - Suggested backend: Python + FastAPI.
-- Suggested storage: SQLite for app data, local filesystem for uploads, local vector/lexical retrieval for document chunks.
+- Suggested storage: local JSON repository for app state, local filesystem for uploads/extracted text, local vector/lexical retrieval for document chunks.
 - Suggested agent style: stateful graph or orchestrator with named agents and shared JSON state.
 - Citation rule: agents may interpret evidence, but they may not invent citations. Citation objects must come from stored source chunks and pass deterministic verification before results are saved or returned.
 - Required limitation text: "This is a decision-support draft, not final legal advice."
@@ -147,7 +147,7 @@ Scaffold the local backend for the AI Act Compliance Assistant. Build a FastAPI 
     - `backend/app/storage/`
     - `backend/tests/`
 - Root requirements:
-  - Add `.gitignore` for Python, Node, local DB, uploads, caches, and env files.
+  - Add `.gitignore` for Python, Node, local JSON state, uploads, caches, and env files.
   - Add `.env.example` with backend config keys and `VITE_API_BASE_URL` documented for the later frontend.
   - Add local backend run instructions to `README.md`.
   - Note that the frontend will be supplied as a downloadable `frontend/` folder from Lovable.
@@ -177,31 +177,40 @@ Adjust commands to the existing environment if the project already has package m
 
 ## Task
 
-- H03-DATA-01 Storage model and local persistence
+- H03-DATA-01 JSON repository and local persistence
 - Timebox: 1 hour
 
 ## Instructions
 
-Implement local persistence for the AI Act Compliance Assistant backend. Use SQLite for structured data and the local filesystem for uploaded files. Keep it simple and reliable for a 24-hour hackathon.
+Implement local persistence for the AI Act Compliance Assistant backend. Use a simple JSON repository for structured state and the local filesystem for uploaded/extracted files. Do not add SQLite, migrations, SQLAlchemy, SQLModel, or a database schema for the hackathon MVP.
 
 ## Implementation Details
 
-- Add database setup under `backend/app/storage/`.
-- Use either SQLAlchemy/SQLModel or direct SQLite helpers, matching the existing backend style.
-- Store these entities:
-  - `cases`: id, title, description, created_at, updated_at
-  - `documents`: id, case_id, filename, content_type, file_path, status, extracted_text_path, created_at
-  - `chunks`: id, case_id, source_id, source_type, source_title, document_id, location, text, normalized_text_hash, metadata_json, created_at
-  - `analyses`: id, case_id, status, result_json, created_at, updated_at
-  - `messages`: id, case_id, role, content, citations_json, created_at
-  - `evidence`: id, case_id, source_type, source_title, document_id, location, snippet, metadata_json
-- The `chunks` table is the source of truth for citations. Final citations must point to real chunk IDs stored there.
-- Add an initialization path that creates the DB on app startup.
+- Add JSON repository helpers under `backend/app/storage/`.
+- Use plain JSON files and Python dataclasses/Pydantic models. Keep the repository API small and boring.
+- Do atomic JSON writes: write to a temp file in the same directory, then replace the target file.
+- Store state under:
+  - `backend/data/state/cases.json`
+  - `backend/data/state/documents.json`
+  - `backend/data/state/chunks/{case_id}.json`
+  - `backend/data/state/analyses/{case_id}.json`
+  - `backend/data/state/messages/{case_id}.json`
+  - `backend/data/state/evidence/{case_id}.json`
+- Persist these records:
+  - case: id, title, description, created_at, updated_at
+  - document: id, case_id, filename, content_type, file_path, status, extracted_text_path, created_at
+  - chunk: id, case_id, source_id, source_type, source_title, document_id, location, text, normalized_text_hash, metadata, created_at
+  - analysis: id, case_id, status, result, created_at, updated_at
+  - message: id, case_id, role, content, citations, created_at
+  - evidence: id, case_id, source_type, source_title, document_id, location, snippet, metadata
+- The `chunks/{case_id}.json` files are the source of truth for uploaded-document citations. Built-in corpus chunks are the source of truth for regulatory citations. Final citations must point to real chunk IDs stored in one of those sources.
+- Add an initialization path that creates state files/directories on app startup.
 - Add upload directories:
+  - `backend/data/state/`
   - `backend/data/uploads/`
   - `backend/data/extracted/`
   - `backend/data/index/`
-- Add repository/helper functions for create/list/get cases, create/list documents, save/get latest analysis, and save/list messages.
+- Add repository/helper functions for create/list/get cases, create/list documents, save/list/get chunks, save/get latest analysis, save/list messages, and save/list evidence.
 
 ## API Contract Support
 
@@ -213,8 +222,8 @@ list_cases() -> list[Case]
 get_case(case_id: str) -> Case | None
 save_document(...) -> Document
 list_documents(case_id: str) -> list[Document]
-save_chunk(...) -> Chunk
-get_chunk(chunk_id: str) -> Chunk | None
+save_chunk(case_id: str, chunk: dict) -> Chunk
+get_chunk(chunk_id: str, case_id: str | None = None) -> Chunk | None
 list_chunks(case_id: str) -> list[Chunk]
 save_analysis(case_id: str, result: dict, status: str = "complete") -> Analysis
 get_latest_analysis(case_id: str) -> Analysis | None
@@ -223,8 +232,8 @@ save_message(case_id: str, role: str, content: str, citations: list[dict]) -> Me
 
 ## Acceptance Criteria
 
-- [ ] SQLite DB is created automatically
-- [ ] Cases, documents, chunks, analyses, messages, and evidence can be persisted
+- [ ] JSON state directories/files are created automatically
+- [ ] Cases, documents, chunks, analyses, messages, and evidence can be persisted in JSON
 - [ ] Stored chunks include enough metadata to verify citations deterministically
 - [ ] Upload and extracted-text directories are created automatically
 - [ ] Analysis JSON can be saved and loaded without losing nested fields
@@ -281,7 +290,7 @@ Build the backend API for case sessions and document uploads. Users need to crea
   - Allow `.pdf`, `.txt`, `.md`.
   - Reject unsupported types with a useful 400 response.
   - Save files under `backend/data/uploads/{case_id}/`.
-  - Persist document rows with status `uploaded`.
+  - Persist document records with status `uploaded`.
 - Include clear error handling:
   - case not found -> 404
   - unsupported file -> 400
@@ -625,7 +634,7 @@ return AnalysisResult
 
 - Add a deterministic citation verification gate before saving:
   - collect all citations from facts, sections, obligations, governance notes, and top-level citations
-  - verify each citation against the stored chunk table/corpus index
+  - verify each citation against the stored chunk JSON/corpus index
   - remove citations that cannot be resolved to stored text
   - add an uncertainty when a conclusion loses citation support
   - lower confidence when important citations are removed
@@ -972,7 +981,7 @@ Implement the backend follow-up chat API inside a case session. The chat should 
   - run the deterministic citation verifier before returning assistant citations
   - avoid final legal-advice language
   - if user provides new factual information, store it as a message and set `reassessment_recommended: true`
-- Save both user and assistant messages in SQLite.
+- Save both user and assistant messages in the JSON repository.
 - Keep response shape exactly aligned with the Lovable frontend contract.
 
 ## Acceptance Criteria

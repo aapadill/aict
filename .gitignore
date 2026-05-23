@@ -1,1 +1,17 @@
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtualenvs
+.venv/
+backend/.venv/
+
+# Local hackathon state and uploaded files
+backend/data/**
+!backend/data/
+!backend/data/.gitkeep
