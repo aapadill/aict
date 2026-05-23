@@ -196,3 +196,107 @@ def test_get_analysis_without_saved_result_returns_404(
 
     assert response.status_code == 404
     assert response.json()["detail"]["error"] == "analysis_not_found"
+
+
+def test_chat_answers_with_verified_citations_and_saves_messages(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = _create_analyzed_case(client)
+
+    response = client.post(
+        f"/cases/{case_id}/chat",
+        json={"message": "Does this look high-risk if it is used for hiring?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["role"] == "assistant"
+    assert "decision support" in payload["content"]
+    assert payload["reassessment_recommended"] is False
+    assert payload["new_facts_detected"] == []
+    assert payload["citations"]
+    assert all(citation["verified"] is True for citation in payload["citations"])
+
+    stored_messages = repo.list_messages(case_id)
+    assert [message.role for message in stored_messages] == ["user", "assistant"]
+    assert stored_messages[0].content == "Does this look high-risk if it is used for hiring?"
+    assert stored_messages[0].citations == []
+    assert stored_messages[1].citations == payload["citations"]
+
+    history_response = client.get(f"/cases/{case_id}/messages")
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert [message["role"] for message in history] == ["user", "assistant"]
+    assert history[1]["citations"] == payload["citations"]
+
+
+def test_chat_flags_new_fact_for_reassessment(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = _create_analyzed_case(client)
+
+    response = client.post(
+        f"/cases/{case_id}/chat",
+        json={
+            "message": "We will remove recruiter review and the system will automatically reject candidates."
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reassessment_recommended"] is True
+    assert payload["new_facts_detected"] == [
+        "We will remove recruiter review and the system will automatically reject candidates."
+    ]
+    assert "rerun the assessment" in payload["content"]
+    assert repo.list_messages(case_id)[0].role == "user"
+
+
+def test_chat_requires_saved_analysis(client_and_repo: tuple[TestClient, JsonRepository]) -> None:
+    client, _repo = client_and_repo
+    case_id = client.post("/cases", json={"title": "No analysis yet"}).json()["id"]
+
+    response = client.post(
+        f"/cases/{case_id}/chat",
+        json={"message": "Does this look high-risk?"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "analysis_not_found"
+
+
+def test_get_messages_missing_case_returns_404(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, _repo = client_and_repo
+
+    response = client.get("/cases/case_missing/messages")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "case_not_found"
+
+
+def _create_analyzed_case(client: TestClient) -> str:
+    case_id = client.post("/cases", json={"title": "Hiring assistant"}).json()["id"]
+    client.post(
+        f"/cases/{case_id}/documents",
+        files=[
+            (
+                "files",
+                (
+                    "brief.txt",
+                    (
+                        b"The AI system ranks candidates for employment. "
+                        b"Recruiters review recommendations before decisions. "
+                        b"Input data includes CVs and application answers."
+                    ),
+                    "text/plain",
+                ),
+            )
+        ],
+    )
+    analyze_response = client.post(f"/cases/{case_id}/analyze")
+    assert analyze_response.status_code == 200
+    return case_id

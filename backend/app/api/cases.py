@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.agents.workflow import AnalysisWorkflowError, latest_analysis_result, run_analysis_workflow
-from app.models.analysis import AnalysisResult
-from app.storage import Case, Document, JsonRepository, repository
+from app.models.analysis import AnalysisResult, Citation
+from app.services.chat import ChatWorkflowError, answer_follow_up
+from app.storage import Case, Document, JsonRepository, Message, repository
 
 ALLOWED_UPLOAD_EXTENSIONS = {".md", ".pdf", ".txt"}
 
@@ -43,6 +44,27 @@ class CaseDetailResponse(CaseResponse):
     documents: list[DocumentResponse]
 
 
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+
+
+class ChatResponse(BaseModel):
+    role: str
+    content: str
+    citations: list[Citation]
+    new_facts_detected: list[str]
+    reassessment_recommended: bool
+
+
+class MessageResponse(BaseModel):
+    id: str
+    case_id: str
+    role: str
+    content: str
+    citations: list[Citation]
+    created_at: str
+
+
 def get_repository() -> JsonRepository:
     return repository
 
@@ -75,6 +97,17 @@ def _case_detail_response(case: Case, documents: list[Document]) -> CaseDetailRe
     return CaseDetailResponse(
         **case_payload.model_dump(),
         documents=[_document_response(document) for document in documents],
+    )
+
+
+def _message_response(message: Message) -> MessageResponse:
+    return MessageResponse(
+        id=message.id,
+        case_id=message.caseid,
+        role=message.role,
+        content=message.content,
+        citations=[Citation.model_validate(citation) for citation in message.citations],
+        created_at=message.createdat,
     )
 
 
@@ -269,3 +302,40 @@ def get_case_analysis(
             f"No saved analysis exists for case '{case_id}'.",
         )
     return result
+
+
+@router.post("/{case_id}/chat", response_model=ChatResponse)
+def chat_with_case(
+    case_id: str,
+    request: ChatRequest,
+    repo: JsonRepository = Depends(get_repository),
+) -> ChatResponse:
+    try:
+        result = answer_follow_up(case_id=case_id, message=request.message, repo=repo)
+    except ChatWorkflowError as exc:
+        if exc.code in {"case_not_found", "analysis_not_found"}:
+            raise _api_error(status.HTTP_404_NOT_FOUND, exc.code, exc.message) from exc
+        if exc.code == "empty_message":
+            raise _api_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message) from exc
+        raise _api_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            exc.code,
+            "Chat response could not be completed.",
+        ) from exc
+
+    return ChatResponse(
+        role=result.role,
+        content=result.content,
+        citations=result.citations,
+        new_facts_detected=result.new_facts_detected,
+        reassessment_recommended=result.reassessment_recommended,
+    )
+
+
+@router.get("/{case_id}/messages", response_model=list[MessageResponse])
+def list_case_messages(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> list[MessageResponse]:
+    _require_case(repo, case_id)
+    return [_message_response(message) for message in repo.list_messages(case_id)]
