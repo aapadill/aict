@@ -1,11 +1,89 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.models.analysis import AgentState, AssessmentSection
+from app.services import llm as llm_service
 from app.storage import JsonRepository, repository
 
-from .utils import add_trace, contains_any, dedupe, joined_uploaded_text, retrieve
+from .utils import (
+    add_trace,
+    build_chunk_map,
+    citations_for_ids,
+    contains_any,
+    dedupe,
+    format_chunks_for_prompt,
+    joined_uploaded_text,
+    retrieve,
+)
+
+logger = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+You are an EU AI Act obligations mapping expert.
+
+Based on the risk classification and extracted facts provided, identify the applicable EU AI Act
+obligations and governance gaps for this AI use case.
+
+Cover these categories as obligations sections:
+1. Provider vs deployer roles — who develops and who deploys determines which obligations apply.
+   Providers (Article 16): technical documentation, conformity assessment, registration, CE marking, post-market monitoring.
+   Deployers (Article 26): fundamental rights impact assessment (where applicable), human oversight, logging, transparency to affected persons.
+2. Transparency and labelling — Article 50 chatbot disclosure, emotion-recognition disclosure, AI-generated content labelling.
+3. GPAI and LLM obligations — if a general-purpose AI model is used: technical documentation (Article 53),
+   training data summary, copyright policy, systemic-risk assessment if applicable (Article 55).
+
+Cover these categories as governance observation sections:
+1. Documentation and accountability — technical file, purpose statement, data governance, role clarity.
+2. Human oversight, monitoring, and logging — operational controls, override authority, post-deployment monitoring, incident reporting.
+
+For each section, cite only the regulatory chunk_ids you were given. Do not invent citations.
+Set confidence to "low" where the uploaded documents do not confirm the relevant facts.
+
+Respond with valid JSON only. No markdown. No text outside the JSON object.\
+"""
+
+_USER_TEMPLATE = """\
+Extracted facts:
+{FACTS}
+
+Risk classification:
+{RISK}
+
+Source chunks:
+{CHUNKS}
+
+Map the applicable obligations and governance gaps for this use case.
+
+Return ONLY this JSON:
+{
+  "obligations": [
+    {
+      "title": "section title",
+      "conclusion": "one-sentence conclusion",
+      "confidence": "low|medium|high",
+      "reasoning": "2-4 sentence reasoning",
+      "uncertainties": ["open questions"],
+      "assumptions": ["assumptions made"],
+      "chunk_ids": ["supporting chunk_ids"]
+    }
+  ],
+  "governance_observations": [
+    {
+      "title": "section title",
+      "conclusion": "one-sentence conclusion",
+      "confidence": "low|medium|high",
+      "reasoning": "2-4 sentence reasoning",
+      "uncertainties": ["open questions"],
+      "assumptions": [],
+      "chunk_ids": ["supporting chunk_ids"]
+    }
+  ],
+  "follow_up_questions": ["list of prioritised follow-up questions"]
+}\
+"""
 
 
 @dataclass
@@ -13,6 +91,76 @@ class ObligationsGovernanceAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
+        model = settings.obligations_agent_model
+        if model:
+            try:
+                return self._run_llm(state, model)
+            except Exception as exc:
+                logger.warning(
+                    "ObligationsGovernanceAgent LLM call failed (%s); falling back to heuristic.", exc
+                )
+        return self._run_heuristic(state)
+
+    # ------------------------------------------------------------------
+    # LLM path
+    # ------------------------------------------------------------------
+
+    def _run_llm(self, state: AgentState, model: str) -> AgentState:
+        regulatory = retrieve(
+            state,
+            "provider deployer obligations documentation risk management human oversight transparency GPAI Article 16 26 50 53",
+            source_types=["legislation", "official_guidance"],
+            limit=8,
+            repo=self.repo,
+        )
+        uploaded = retrieve(
+            state,
+            "provider deployer vendor operator roles responsibilities oversight logging",
+            source_types=["uploaded_document"],
+            limit=4,
+            repo=self.repo,
+        )
+        all_citations = [*uploaded, *regulatory]
+        chunk_map = build_chunk_map(all_citations)
+
+        facts_summary = _format_facts(state)
+        risk_summary = _format_risk(state)
+
+        user_prompt = (
+            _USER_TEMPLATE
+            .replace("{FACTS}", facts_summary)
+            .replace("{RISK}", risk_summary)
+            .replace("{CHUNKS}", format_chunks_for_prompt(all_citations))
+        )
+        raw = llm_service.complete(
+            model, _SYSTEM_PROMPT, user_prompt, json_mode=True, max_tokens=3500
+        )
+        data = llm_service.parse_json(raw)
+
+        state.obligations = [
+            _section_from_data(s, chunk_map) for s in data.get("obligations", [])
+        ]
+        state.governance_observations = [
+            _section_from_data(s, chunk_map) for s in data.get("governance_observations", [])
+        ]
+        state.follow_up_questions = dedupe(
+            [*state.follow_up_questions, *data.get("follow_up_questions", [])]
+        )
+
+        add_trace(
+            state,
+            "ObligationsGovernanceAgent",
+            "map_obligations_and_governance",
+            f"LLM produced {len(state.obligations)} obligation sections and "
+            f"{len(state.governance_observations)} governance observations.",
+        )
+        return state
+
+    # ------------------------------------------------------------------
+    # Heuristic fallback (original implementation)
+    # ------------------------------------------------------------------
+
+    def _run_heuristic(self, state: AgentState) -> AgentState:
         text = joined_uploaded_text(state, repo=self.repo)
         role_section = self._role_and_obligation_section(state, text)
         transparency_section = self._transparency_section(state, text)
@@ -184,3 +332,34 @@ class ObligationsGovernanceAgent:
                 ],
             ),
         ]
+
+
+def _format_facts(state: AgentState) -> str:
+    if not state.facts:
+        return "(no facts extracted yet)"
+    lines = []
+    for fact in state.facts:
+        lines.append(f"- {fact.label} [{fact.status}]: {fact.value or '(not found)'}")
+    return "\n".join(lines)
+
+
+def _format_risk(state: AgentState) -> str:
+    if state.risk_classification is None:
+        return "(risk classification not yet available)"
+    rc = state.risk_classification
+    return f"Conclusion: {rc.conclusion}\nConfidence: {rc.confidence}\nReasoning: {rc.reasoning}"
+
+
+def _section_from_data(data: dict, chunk_map: dict) -> AssessmentSection:
+    confidence = data.get("confidence", "low")
+    if confidence not in ("low", "medium", "high"):
+        confidence = "low"
+    return AssessmentSection(
+        title=data.get("title", ""),
+        conclusion=data.get("conclusion", ""),
+        confidence=confidence,
+        reasoning=data.get("reasoning", ""),
+        citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
+        assumptions=data.get("assumptions", []),
+        uncertainties=data.get("uncertainties", []),
+    )

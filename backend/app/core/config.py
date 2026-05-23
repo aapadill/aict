@@ -55,8 +55,29 @@ class Settings:
     )
     llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "mock"))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     embedding_provider: str = field(
         default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "local")
+    )
+    # Per-agent model strings: "provider:model-id" (e.g. "openai:gpt-4o-mini").
+    # Leave empty to use the deterministic heuristic fallback.
+    document_fact_agent_model: str = field(
+        default_factory=lambda: os.getenv("DOCUMENT_FACT_AGENT_MODEL", "")
+    )
+    ai_system_agent_model: str = field(
+        default_factory=lambda: os.getenv("AI_SYSTEM_AGENT_MODEL", "")
+    )
+    risk_classification_agent_model: str = field(
+        default_factory=lambda: os.getenv("RISK_CLASSIFICATION_AGENT_MODEL", "")
+    )
+    obligations_agent_model: str = field(
+        default_factory=lambda: os.getenv("OBLIGATIONS_AGENT_MODEL", "")
+    )
+    critic_agent_model: str = field(
+        default_factory=lambda: os.getenv("CRITIC_AGENT_MODEL", "")
+    )
+    chat_agent_model: str = field(
+        default_factory=lambda: os.getenv("CHAT_AGENT_MODEL", "")
     )
 
     def ensure_dirs(self) -> None:

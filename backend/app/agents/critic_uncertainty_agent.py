@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.models.analysis import AgentState, AssessmentSection, LIMITATION_NOTICE
+from app.services import llm as llm_service
 from app.storage import JsonRepository, repository
 
 from .utils import add_trace, dedupe, joined_uploaded_text
+
+logger = logging.getLogger(__name__)
 
 CRITICAL_FACT_LABELS = (
     "Purpose",
@@ -18,12 +23,122 @@ CRITICAL_FACT_LABELS = (
     "Deployment context",
 )
 
+_SYSTEM_PROMPT = """\
+You are a critical reviewer for EU AI Act compliance assessments.
+
+Review the draft assessment and identify:
+1. Conclusions or claims that are not grounded in cited evidence (flag as uncertain)
+2. Sections where the stated confidence level is too high given the supporting evidence
+3. Important uncertainties or legal caveats that are missing
+4. Logical gaps between the extracted facts and the risk classification or obligations
+5. Follow-up questions that would resolve key outstanding uncertainties
+
+Be constructive and specific. Your output will be merged with the existing assessment — do not
+repeat information that is already present in the draft's missing_information or uncertainties lists.
+
+Respond with valid JSON only. No markdown. No text outside the JSON object.\
+"""
+
+_USER_TEMPLATE = """\
+Draft assessment:
+{DRAFT}
+
+Structural flags already identified:
+- Missing critical facts: {MISSING}
+- Weak-evidence facts (found but no citations): {WEAK}
+- Visible contradictions: {CONTRADICTIONS}
+
+Review the draft and return ONLY this JSON:
+{
+  "additional_missing_information": ["new items not already listed above"],
+  "additional_uncertainties": ["new uncertainty items not already in the draft"],
+  "additional_follow_up_questions": ["new questions not already in the draft"]
+}\
+"""
+
 
 @dataclass
 class CriticUncertaintyAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
+        # Always run the heuristic first — it handles deterministic structural checks.
+        self._run_heuristic(state)
+
+        model = settings.critic_agent_model
+        if model:
+            try:
+                self._run_llm_critique(state, model)
+            except Exception as exc:
+                logger.warning(
+                    "CriticUncertaintyAgent LLM call failed (%s); heuristic output retained.", exc
+                )
+        return state
+
+    # ------------------------------------------------------------------
+    # LLM critique (runs on top of heuristic results)
+    # ------------------------------------------------------------------
+
+    def _run_llm_critique(self, state: AgentState, model: str) -> None:
+        missing_labels = [
+            fact.label
+            for fact in state.facts
+            if fact.label in CRITICAL_FACT_LABELS and fact.status != "found"
+        ]
+        weak_labels = [
+            fact.label
+            for fact in state.facts
+            if fact.status == "found" and not fact.citations
+        ]
+        contradiction_notes = self._find_visible_contradictions(state)
+
+        draft_text = _format_draft(state)
+        user_prompt = (
+            _USER_TEMPLATE
+            .replace("{DRAFT}", draft_text)
+            .replace("{MISSING}", ", ".join(missing_labels) or "none")
+            .replace("{WEAK}", ", ".join(weak_labels) or "none")
+            .replace("{CONTRADICTIONS}", "; ".join(contradiction_notes) or "none")
+        )
+
+        raw = llm_service.complete(
+            model, _SYSTEM_PROMPT, user_prompt, json_mode=True, max_tokens=2000
+        )
+        data = llm_service.parse_json(raw)
+
+        state.missing_information = dedupe(
+            [
+                *state.missing_information,
+                *data.get("additional_missing_information", []),
+            ]
+        )
+        state.uncertainties = dedupe(
+            [
+                *state.uncertainties,
+                *data.get("additional_uncertainties", []),
+            ]
+        )
+        state.follow_up_questions = dedupe(
+            [
+                *state.follow_up_questions,
+                *data.get("additional_follow_up_questions", []),
+            ]
+        )
+
+        add_trace(
+            state,
+            "CriticUncertaintyAgent",
+            "llm_critique",
+            f"LLM added {len(data.get('additional_missing_information', []))} missing items, "
+            f"{len(data.get('additional_uncertainties', []))} uncertainties, "
+            f"{len(data.get('additional_follow_up_questions', []))} questions.",
+        )
+
+    # ------------------------------------------------------------------
+    # Heuristic pass (original implementation — always runs)
+    # ------------------------------------------------------------------
+
+    def _run_heuristic(self, state: AgentState) -> None:
         missing_labels = [
             fact.label
             for fact in state.facts
@@ -113,7 +228,6 @@ class CriticUncertaintyAgent:
                 f"{len(weak_labels)} weak-evidence facts, and {len(contradiction_notes)} visible contradictions."
             ),
         )
-        return state
 
     def _review_section(
         self,
@@ -183,3 +297,36 @@ def _downgrade(confidence: str) -> str:
     if confidence == "medium":
         return "low"
     return "low"
+
+
+def _format_draft(state: AgentState) -> str:
+    parts: list[str] = []
+
+    parts.append("=== Extracted facts ===")
+    for fact in state.facts:
+        cited = len(fact.citations)
+        parts.append(f"- {fact.label} [{fact.status}, {cited} citation(s)]: {fact.value or '(empty)'}")
+
+    if state.ai_system_assessment:
+        a = state.ai_system_assessment
+        parts.append(f"\n=== AI-system assessment ===\nConclusion: {a.conclusion}\nConfidence: {a.confidence}\nReasoning: {a.reasoning}")
+
+    if state.risk_classification:
+        r = state.risk_classification
+        parts.append(f"\n=== Risk classification ===\nConclusion: {r.conclusion}\nConfidence: {r.confidence}\nReasoning: {r.reasoning}")
+
+    if state.obligations:
+        parts.append("\n=== Obligations ===")
+        for s in state.obligations:
+            parts.append(f"- {s.title}: {s.conclusion} (confidence: {s.confidence})")
+
+    if state.governance_observations:
+        parts.append("\n=== Governance observations ===")
+        for s in state.governance_observations:
+            parts.append(f"- {s.title}: {s.conclusion} (confidence: {s.confidence})")
+
+    if state.missing_information:
+        parts.append("\n=== Already flagged missing information ===")
+        parts.extend(f"- {item}" for item in state.missing_information[:10])
+
+    return "\n".join(parts)

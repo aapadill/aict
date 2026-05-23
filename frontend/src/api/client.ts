@@ -25,7 +25,9 @@ export function getApiMode(): ApiMode {
 }
 export function onApiModeChange(cb: (m: ApiMode) => void) {
   listeners.add(cb);
-  return () => listeners.delete(cb);
+  return () => {
+    listeners.delete(cb);
+  };
 }
 function setMode(m: ApiMode) {
   if (mode !== m) {

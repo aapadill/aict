@@ -1,13 +1,46 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 
 from app.agents.workflow import latest_analysis_result
+from app.core.config import settings
 from app.models.analysis import AnalysisResult, Citation
+from app.services import llm as llm_service
 from app.services.citation_verifier import verify_citations
 from app.services.retrieval import search_case
 from app.storage import JsonRepository, repository
+
+logger = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+You are an EU AI Act compliance assistant. You answer follow-up questions based on a saved
+first-pass assessment and retrieved source evidence.
+
+Rules:
+- Ground every claim in the saved assessment or a provided source chunk.
+- Be direct but cautious. Uncertainty is a feature, not a bug.
+- Never give a definitive legal conclusion ("this is compliant" or "this is illegal").
+- If a source chunk supports your point, reference it as [chunk_id].
+- Keep the answer focused and under 400 words.
+- End every answer with: "This is decision support, not final legal advice."\
+"""
+
+_USER_TEMPLATE = """\
+Question: {QUESTION}
+
+Saved assessment summary:
+{SUMMARY}
+
+Risk classification: {RISK}
+
+Key missing information and uncertainties:
+{MISSING}
+
+Retrieved source chunks:
+{CHUNKS}\
+"""
 
 
 @dataclass(frozen=True)
@@ -51,12 +84,21 @@ def answer_follow_up(
 
     new_facts = detect_new_facts(text)
     citations = _retrieve_and_verify(case_id, text, repo=repo)
-    content = _build_answer(
-        question=text,
-        analysis=analysis,
-        citations=citations,
-        new_facts=new_facts,
-    )
+
+    model = settings.chat_agent_model
+    if model:
+        try:
+            content = _build_llm_answer(model, text, analysis, citations)
+        except Exception as exc:
+            logger.warning("Chat LLM call failed (%s); falling back to template answer.", exc)
+            content = _build_template_answer(
+                question=text, analysis=analysis, citations=citations, new_facts=new_facts
+            )
+    else:
+        content = _build_template_answer(
+            question=text, analysis=analysis, citations=citations, new_facts=new_facts
+        )
+
     reassessment_recommended = bool(new_facts)
     if reassessment_recommended:
         content += (
@@ -98,27 +140,40 @@ def detect_new_facts(message: str) -> list[str]:
     return _dedupe(facts)
 
 
-def _retrieve_and_verify(case_id: str, message: str, repo: JsonRepository) -> list[Citation]:
-    citations = [
-        *search_case(
-            case_id,
-            message,
-            source_types=["uploaded_document"],
-            limit=3,
-            repo=repo,
-        ),
-        *search_case(
-            case_id,
-            message,
-            source_types=["legislation", "official_guidance", "national_guidance"],
-            limit=3,
-            repo=repo,
-        ),
-    ]
-    return _dedupe_citations(verify_citations(citations, repo=repo))
+# ------------------------------------------------------------------
+# LLM answer
+# ------------------------------------------------------------------
 
 
-def _build_answer(
+def _build_llm_answer(
+    model: str,
+    question: str,
+    analysis: AnalysisResult,
+    citations: list[Citation],
+) -> str:
+    from app.agents.utils import format_chunks_for_prompt
+
+    missing_items = "; ".join(analysis.missing_information[:5]) or "none identified"
+    chunks_text = format_chunks_for_prompt(citations)
+
+    user_prompt = (
+        _USER_TEMPLATE
+        .replace("{QUESTION}", question)
+        .replace("{SUMMARY}", analysis.summary or "(no summary available)")
+        .replace("{RISK}", analysis.risk_classification.conclusion)
+        .replace("{MISSING}", missing_items)
+        .replace("{CHUNKS}", chunks_text)
+    )
+
+    return llm_service.complete(model, _SYSTEM_PROMPT, user_prompt, max_tokens=1500)
+
+
+# ------------------------------------------------------------------
+# Template-based fallback answer (original implementation)
+# ------------------------------------------------------------------
+
+
+def _build_template_answer(
     question: str,
     analysis: AnalysisResult,
     citations: list[Citation],
@@ -172,6 +227,31 @@ def _build_answer(
         parts.append("New fact-like statements detected: " + "; ".join(new_facts) + ".")
 
     return "\n\n".join(parts)
+
+
+# ------------------------------------------------------------------
+# Shared helpers
+# ------------------------------------------------------------------
+
+
+def _retrieve_and_verify(case_id: str, message: str, repo: JsonRepository) -> list[Citation]:
+    citations = [
+        *search_case(
+            case_id,
+            message,
+            source_types=["uploaded_document"],
+            limit=3,
+            repo=repo,
+        ),
+        *search_case(
+            case_id,
+            message,
+            source_types=["legislation", "official_guidance", "national_guidance"],
+            limit=3,
+            repo=repo,
+        ),
+    ]
+    return _dedupe_citations(verify_citations(citations, repo=repo))
 
 
 def _asks_about_risk(text: str) -> bool:

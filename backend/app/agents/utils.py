@@ -95,3 +95,62 @@ def dedupe(values: Iterable[str]) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+# ---------------------------------------------------------------------------
+# LLM prompt helpers
+# ---------------------------------------------------------------------------
+
+
+def chunks_as_citations(chunks: list[Chunk]) -> list[Citation]:
+    """Convert Chunk storage objects to Citation analysis objects.
+
+    Uses the full chunk text (capped at 800 chars) as the snippet so the
+    LLM receives as much context as possible during fact extraction.
+    """
+    return [
+        Citation(
+            id=f"citation_{chunk.id}",
+            source_id=chunk.sourceid,
+            chunk_id=chunk.id,
+            source_type=chunk.sourcetype,  # type: ignore[arg-type]
+            source_title=chunk.sourcetitle,
+            document_id=chunk.documentid,
+            location=chunk.location,
+            snippet=chunk.text[:800],
+        )
+        for chunk in chunks
+    ]
+
+
+def format_chunks_for_prompt(citations: list[Citation]) -> str:
+    """Format citations as numbered context blocks for LLM prompts."""
+    if not citations:
+        return "(no source chunks available)"
+    parts: list[str] = []
+    for i, c in enumerate(citations, 1):
+        cid = c.chunk_id or c.id
+        loc = f" | {c.location}" if c.location else ""
+        parts.append(
+            f'[{i}] chunk_id={cid} | source="{c.source_title} ({c.source_type})"{loc}\n"""\n{c.snippet}\n"""'
+        )
+    return "\n\n".join(parts)
+
+
+def build_chunk_map(citations: list[Citation]) -> dict[str, Citation]:
+    """Return chunk_id -> Citation mapping for resolving LLM-returned IDs."""
+    return {c.chunk_id: c for c in citations if c.chunk_id}
+
+
+def citations_for_ids(
+    chunk_ids: list[str],
+    chunk_map: dict[str, Citation],
+) -> list[Citation]:
+    """Resolve a list of chunk_id strings to Citation objects, skipping unknowns."""
+    seen: set[str] = set()
+    result: list[Citation] = []
+    for cid in chunk_ids:
+        if cid in chunk_map and cid not in seen:
+            result.append(chunk_map[cid])
+            seen.add(cid)
+    return result

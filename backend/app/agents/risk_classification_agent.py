@@ -1,11 +1,80 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.models.analysis import AgentState, AssessmentSection
+from app.services import llm as llm_service
 from app.storage import JsonRepository, repository
 
-from .utils import add_trace, contains_any, dedupe, joined_uploaded_text, retrieve
+from .utils import (
+    add_trace,
+    build_chunk_map,
+    citations_for_ids,
+    contains_any,
+    dedupe,
+    format_chunks_for_prompt,
+    joined_uploaded_text,
+    retrieve,
+)
+
+logger = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+You are an EU AI Act risk classification expert.
+
+Risk levels under the EU AI Act:
+
+1. PROHIBITED (Article 5) — must not be placed on the market or used:
+   - Subliminal, manipulative, or deceptive techniques that distort behaviour to harm people
+   - Exploitation of vulnerabilities (age, disability, socioeconomic situation)
+   - Social scoring by public authorities that leads to detrimental treatment
+   - Real-time remote biometric identification in publicly accessible spaces by law enforcement (with limited exceptions)
+   - Retrospective remote biometric identification (except for prosecution of serious crimes)
+   - Emotion recognition in workplace or educational settings
+   - Biometric categorisation that infers sensitive characteristics (race, political opinions, religion, etc.)
+   - Individual criminal risk assessment used to predict reoffending based on profiling
+   - Untargeted scraping of facial images to build databases
+
+2. HIGH-RISK (Annex III) — permitted with conformity obligations:
+   - Biometric identification and categorisation (excluding prohibited cases)
+   - Critical infrastructure safety (transport, water, gas, heating, electricity, etc.)
+   - Education and vocational training (access decisions, assessment, monitoring)
+   - Employment, workers management, access to self-employment (CV scoring, task allocation, monitoring)
+   - Essential private and public services (credit scoring, benefits eligibility, emergency dispatch)
+   - Law enforcement (risk assessment of individuals, polygraphs, evaluation of evidence reliability)
+   - Migration, asylum, and border control management
+   - Administration of justice and democratic processes
+
+3. LIMITED RISK (Article 50 transparency obligations):
+   - Systems that interact directly with natural persons (chatbots) → must inform users
+   - Emotion recognition systems → must inform affected persons
+   - AI-generated or manipulated content (deep fakes, synthetic images/video/audio) → must be labelled
+   - AI-generated text on matters of public interest → must be disclosed
+
+4. MINIMAL RISK: All other AI systems (no specific obligations beyond general principles).
+
+Important: prohibited-practice concerns take priority and must be flagged even if high-risk signals are also present.
+
+Respond with valid JSON only. No markdown. No text outside the JSON object.\
+"""
+
+_USER_TEMPLATE = """\
+Source chunks:
+{CHUNKS}
+
+Classify the risk level of the AI use case described in the uploaded document chunks.
+
+Return ONLY this JSON:
+{
+  "conclusion": "one-sentence risk classification conclusion",
+  "confidence": "low|medium|high",
+  "reasoning": "3-5 sentence reasoning referencing specific Annex III categories or Article 5 provisions where applicable",
+  "uncertainties": ["list of open questions that could change the classification"],
+  "chunk_ids": ["chunk_ids from the provided context that ground the conclusion"]
+}\
+"""
 
 
 @dataclass
@@ -13,6 +82,84 @@ class RiskClassificationAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
+        model = settings.risk_classification_agent_model
+        if model:
+            try:
+                return self._run_llm(state, model)
+            except Exception as exc:
+                logger.warning(
+                    "RiskClassificationAgent LLM call failed (%s); falling back to heuristic.", exc
+                )
+        return self._run_heuristic(state)
+
+    # ------------------------------------------------------------------
+    # LLM path
+    # ------------------------------------------------------------------
+
+    def _run_llm(self, state: AgentState, model: str) -> AgentState:
+        uploaded = retrieve(
+            state,
+            "AI system purpose sector deployment affected persons outputs",
+            source_types=["uploaded_document"],
+            limit=5,
+            repo=self.repo,
+        )
+        high_risk = retrieve(
+            state,
+            "Annex III high-risk employment education biometrics law enforcement migration infrastructure justice essential services",
+            source_types=["legislation", "official_guidance"],
+            limit=4,
+            repo=self.repo,
+        )
+        prohibited = retrieve(
+            state,
+            "Article 5 prohibited manipulation social scoring biometric emotion recognition real-time remote",
+            source_types=["legislation", "official_guidance"],
+            limit=4,
+            repo=self.repo,
+        )
+        limited_risk = retrieve(
+            state,
+            "Article 50 transparency chatbot generated content deep fake emotion recognition",
+            source_types=["legislation", "official_guidance"],
+            limit=3,
+            repo=self.repo,
+        )
+        all_citations = [*uploaded, *high_risk, *prohibited, *limited_risk]
+        chunk_map = build_chunk_map(all_citations)
+
+        user_prompt = _USER_TEMPLATE.replace("{CHUNKS}", format_chunks_for_prompt(all_citations))
+        raw = llm_service.complete(
+            model, _SYSTEM_PROMPT, user_prompt, json_mode=True, max_tokens=2000
+        )
+        data = llm_service.parse_json(raw)
+
+        confidence = data.get("confidence", "low")
+        if confidence not in ("low", "medium", "high"):
+            confidence = "low"
+
+        state.risk_classification = AssessmentSection(
+            title="Risk classification",
+            conclusion=data.get("conclusion", ""),
+            confidence=confidence,
+            reasoning=data.get("reasoning", ""),
+            citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
+            assumptions=["Classification is preliminary and based on currently uploaded materials."],
+            uncertainties=dedupe(data.get("uncertainties", [])),
+        )
+        add_trace(
+            state,
+            "RiskClassificationAgent",
+            "classify_risk",
+            f"LLM risk conclusion: {data.get('conclusion', '')[:120]}",
+        )
+        return state
+
+    # ------------------------------------------------------------------
+    # Heuristic fallback (original implementation)
+    # ------------------------------------------------------------------
+
+    def _run_heuristic(self, state: AgentState) -> AgentState:
         text = joined_uploaded_text(state, repo=self.repo)
         regulatory_citations = retrieve(
             state,
@@ -86,7 +233,7 @@ class RiskClassificationAgent:
             conclusion=conclusion,
             confidence=confidence,
             reasoning=reasoning,
-            citations=dedupe_citations(citations),
+            citations=_dedupe_citations(citations),
             assumptions=["Classification is preliminary and based on currently uploaded materials."],
             uncertainties=dedupe(uncertainties),
         )
@@ -139,7 +286,7 @@ class RiskClassificationAgent:
         return None
 
 
-def dedupe_citations(citations: list) -> list:
+def _dedupe_citations(citations: list) -> list:
     seen: set[str] = set()
     result: list = []
     for citation in citations:
