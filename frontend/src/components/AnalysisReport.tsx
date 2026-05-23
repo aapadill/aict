@@ -3,6 +3,41 @@ import type { AnalysisResult, AssessmentSection, Citation, ExtractedFact } from 
 import EvidencePanel, { CitationItem } from "./EvidencePanel";
 import AgentTrace from "./AgentTrace";
 
+function DropdownPanel({
+  title,
+  meta,
+  defaultOpen = false,
+  className = "",
+  children,
+}: {
+  title: string;
+  meta?: React.ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <details
+      className={`panel dropdown-panel ${className}`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="dropdown-summary">
+        <div>
+          <h2>{title}</h2>
+          {meta && <p>{meta}</p>}
+        </div>
+        <span className="dropdown-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div className="dropdown-content">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function SectionView({
   s,
   selectedCitationId,
@@ -234,13 +269,11 @@ export default function AnalysisReport({
         </section>
       </div>
 
-      <div className="panel facts-panel">
-        <div className="section-head">
-          <div>
-            <h2>Extracted facts</h2>
-            <p>Compact facts with cited source context.</p>
-          </div>
-        </div>
+      <DropdownPanel
+        title="Extracted facts"
+        meta="Compact facts with cited source context."
+        className="facts-panel"
+      >
         {supportedFacts.length === 0 ? (
           <div className="muted small">No extracted facts with supporting citations.</div>
         ) : (
@@ -258,28 +291,34 @@ export default function AnalysisReport({
             <CitationPreview citation={citationPreview} />
           </div>
         )}
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>AI-system definition assessment</h2>
+      <DropdownPanel
+        title="AI-system definition assessment"
+        meta={`${a.ai_system_assessment.confidence} confidence`}
+      >
         <SectionView
           s={a.ai_system_assessment}
           selectedCitationId={citationPreview?.id}
           onOpenCitation={setSelectedCitation}
         />
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>Preliminary risk classification</h2>
+      <DropdownPanel
+        title="Preliminary risk classification"
+        meta={`${a.risk_classification.confidence} confidence`}
+      >
         <SectionView
           s={a.risk_classification}
           selectedCitationId={citationPreview?.id}
           onOpenCitation={setSelectedCitation}
         />
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>Roles & obligations</h2>
+      <DropdownPanel
+        title="Roles & obligations"
+        meta={`${a.obligations.length} section${a.obligations.length === 1 ? "" : "s"}`}
+      >
         {a.obligations.length === 0 ? (
           <div className="muted small">None identified.</div>
         ) : (
@@ -292,10 +331,12 @@ export default function AnalysisReport({
             />
           ))
         )}
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>Governance observations</h2>
+      <DropdownPanel
+        title="Governance observations"
+        meta={`${a.governance_observations.length} observation${a.governance_observations.length === 1 ? "" : "s"}`}
+      >
         {a.governance_observations.length === 0 ? (
           <div className="muted small">None.</div>
         ) : (
@@ -308,10 +349,12 @@ export default function AnalysisReport({
             />
           ))
         )}
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>Missing information</h2>
+      <DropdownPanel
+        title="Missing information"
+        meta={`${a.missing_information.length} item${a.missing_information.length === 1 ? "" : "s"}`}
+      >
         {a.missing_information.length === 0 ? (
           <div className="muted small">None.</div>
         ) : (
@@ -319,30 +362,26 @@ export default function AnalysisReport({
             {a.missing_information.map((m, i) => <li key={i}>{m}</li>)}
           </ul>
         )}
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <div className="section-head">
-          <div>
-            <h2>Evidence & citations</h2>
-            <p>{a.citations.length} cited source{a.citations.length === 1 ? "" : "s"}</p>
-          </div>
-        </div>
+      <DropdownPanel
+        title="Evidence & citations"
+        meta={`${a.citations.length} cited source${a.citations.length === 1 ? "" : "s"}`}
+      >
         <EvidencePanel citations={a.citations} />
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <div className="section-head">
-          <div>
-            <h2>Agent trace</h2>
-            <p>{a.agent_trace.length} event{a.agent_trace.length === 1 ? "" : "s"}</p>
-          </div>
-        </div>
+      <DropdownPanel
+        title="Agent trace"
+        meta={`${a.agent_trace.length} event${a.agent_trace.length === 1 ? "" : "s"}`}
+      >
         <AgentTrace events={a.agent_trace} />
-      </div>
+      </DropdownPanel>
 
-      <div className="panel">
-        <h2>Follow-up questions</h2>
+      <DropdownPanel
+        title="Follow-up questions"
+        meta={`${a.follow_up_questions.length} question${a.follow_up_questions.length === 1 ? "" : "s"}`}
+      >
         {a.follow_up_questions.length === 0 ? (
           <div className="muted small">None.</div>
         ) : (
@@ -350,7 +389,7 @@ export default function AnalysisReport({
             {a.follow_up_questions.map((q, i) => <li key={i}>{q}</li>)}
           </ul>
         )}
-      </div>
+      </DropdownPanel>
 
       <div className="panel report-chat-cta">
         <div>
