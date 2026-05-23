@@ -8,7 +8,9 @@ client = TestClient(app)
 def test_health_returns_ok() -> None:
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "llm_configured" in data
 
 
 def test_cors_allows_local_vite_origin() -> None:

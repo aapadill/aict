@@ -49,10 +49,10 @@ Assess whether the described use case involves an AI system in scope of the EU A
 
 Return ONLY this JSON:
 {
-  "conclusion": "one-sentence conclusion",
+  "conclusion": "one short, plain-language conclusion",
   "confidence": "low|medium|high",
-  "reasoning": "2-4 sentence reasoning grounded in the provided chunks",
-  "uncertainties": ["list of remaining open questions"],
+  "reasoning": "1-2 short sentences grounded in the provided chunks",
+  "uncertainties": ["only the most important remaining open questions, max 3"],
   "chunk_ids": ["chunk_ids that support the conclusion"]
 }\
 """
@@ -112,7 +112,7 @@ class AISystemDefinitionAgent:
             reasoning=data.get("reasoning", ""),
             citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
             assumptions=["Assessment is based only on uploaded documents and built-in AI Act corpus."],
-            uncertainties=dedupe(data.get("uncertainties", [])),
+            uncertainties=dedupe(data.get("uncertainties", []))[:3],
         )
         add_trace(
             state,

@@ -15,6 +15,18 @@ This document defines the minimum architecture for the hackathon MVP. Keep imple
 9. User asks a follow-up question in the same case.
 10. Backend answers using the saved analysis, uploaded documents, AI Act references, and chat history.
 
+## Runtime Topology
+
+The preferred demo runtime is Docker Compose from the repo root.
+
+- `backend` container: FastAPI app on container port `8000`, exposed as `${BACKEND_PORT:-8000}`.
+- `frontend` container: Vite app on container port `5173`, exposed as `${FRONTEND_PORT:-5173}`.
+- `backend-data` volume: persistent local demo state for cases, uploaded files, extracted text, chunks, analyses, evidence, and messages.
+- Built-in AI Act corpus: copied into the backend image at `/app/data/corpus`.
+- Runtime backend state in Docker: `/app/runtime-data`.
+
+The same services can still be run manually for debugging, but demo docs and QA should prefer `make up` or `docker compose up --build`.
+
 ## Backend Services
 
 - `api`: FastAPI routes for health, cases, documents, analysis, and chat.
@@ -34,9 +46,9 @@ Minimum endpoints expected by the frontend:
 - `GET /cases/{case_id}`
 - `POST /cases/{case_id}/documents`
 - `GET /cases/{case_id}/documents`
-- `POST /cases/{case_id}/analysis`
-- `GET /cases/{case_id}/analysis/latest`
-- `POST /cases/{case_id}/messages`
+- `POST /cases/{case_id}/analyze`
+- `GET /cases/{case_id}/analysis`
+- `POST /cases/{case_id}/chat`
 - `GET /cases/{case_id}/messages`
 
 ## Frontend Screens
@@ -88,6 +100,7 @@ This is a decision-support draft, not final legal advice.
 ## Implementation Constraints
 
 - Keep the MVP single-user and local-first.
+- Prefer the Docker Compose stack for demo validation; use manual commands only when debugging a specific service.
 - Prefer deterministic behavior and visible fallbacks over hidden external dependencies.
 - Store enough source metadata to explain every citation in the UI.
 - Make confidence and uncertainty explicit.

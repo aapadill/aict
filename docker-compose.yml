@@ -13,6 +13,19 @@ services:
       INDEX_DIR: /app/runtime-data/index
       AI_ACT_CORPUS_DIR: /app/data/corpus
       EMBEDDING_PROVIDER: local
+      # LLM provider keys — read from .env at the repo root
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # vLLM / self-hosted OpenAI-compatible server
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      # Per-agent model strings (provider:model-id). Empty = deterministic fallback.
+      DOCUMENT_FACT_AGENT_MODEL: ${DOCUMENT_FACT_AGENT_MODEL:-}
+      AI_SYSTEM_AGENT_MODEL: ${AI_SYSTEM_AGENT_MODEL:-}
+      RISK_CLASSIFICATION_AGENT_MODEL: ${RISK_CLASSIFICATION_AGENT_MODEL:-}
+      OBLIGATIONS_AGENT_MODEL: ${OBLIGATIONS_AGENT_MODEL:-}
+      CRITIC_AGENT_MODEL: ${CRITIC_AGENT_MODEL:-}
+      CHAT_AGENT_MODEL: ${CHAT_AGENT_MODEL:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

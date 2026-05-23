@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterable
 
 from app.models.analysis import AgentState, AgentTraceEvent, Citation
-from app.services.citation_utils import normalize_for_citation
+from app.services.citation_utils import normalize_for_citation, quote_hash
 from app.services.retrieval import search_case
 from app.storage import Chunk, JsonRepository, repository
 
@@ -151,6 +151,32 @@ def citations_for_ids(
     result: list[Citation] = []
     for cid in chunk_ids:
         if cid in chunk_map and cid not in seen:
-            result.append(chunk_map[cid])
+            result.append(compact_citation(chunk_map[cid]))
             seen.add(cid)
     return result
+
+
+def compact_citation(citation: Citation, max_length: int = 240) -> Citation:
+    snippet = compact_snippet(citation.snippet, max_length=max_length)
+    return citation.model_copy(
+        update={
+            "snippet": snippet,
+            "quote_hash": quote_hash(snippet) if snippet else None,
+            "verified": None,
+        }
+    )
+
+
+def compact_snippet(text: str, max_length: int = 240) -> str:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= max_length:
+        return compact
+
+    sentence_match = re.search(r"^(.{40,}?[.!?])(?:\s|$)", compact)
+    if sentence_match and len(sentence_match.group(1)) <= max_length:
+        return sentence_match.group(1)
+
+    cutoff = compact.rfind(" ", 0, max_length - 3)
+    if cutoff < max_length // 2:
+        cutoff = max_length - 3
+    return compact[:cutoff].rstrip(" ,;:") + "..."

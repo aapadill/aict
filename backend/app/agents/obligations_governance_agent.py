@@ -41,6 +41,7 @@ Cover these categories as governance observation sections:
 
 For each section, cite only the regulatory chunk_ids you were given. Do not invent citations.
 Set confidence to "low" where the uploaded documents do not confirm the relevant facts.
+Keep the output concise and user-facing: prefer short conclusions, short reasoning, and avoid repeating the same uncertainty across sections.
 
 Respond with valid JSON only. No markdown. No text outside the JSON object.\
 """
@@ -56,27 +57,28 @@ Source chunks:
 {CHUNKS}
 
 Map the applicable obligations and governance gaps for this use case.
+Return no more than 4 obligation sections, no more than 3 governance observations, and no more than 6 follow-up questions.
 
 Return ONLY this JSON:
 {
   "obligations": [
     {
       "title": "section title",
-      "conclusion": "one-sentence conclusion",
+      "conclusion": "one short, plain-language conclusion",
       "confidence": "low|medium|high",
-      "reasoning": "2-4 sentence reasoning",
-      "uncertainties": ["open questions"],
-      "assumptions": ["assumptions made"],
+      "reasoning": "1-2 short sentences",
+      "uncertainties": ["open questions, max 2"],
+      "assumptions": ["assumptions made, max 2"],
       "chunk_ids": ["supporting chunk_ids"]
     }
   ],
   "governance_observations": [
     {
       "title": "section title",
-      "conclusion": "one-sentence conclusion",
+      "conclusion": "one short, plain-language conclusion",
       "confidence": "low|medium|high",
-      "reasoning": "2-4 sentence reasoning",
-      "uncertainties": ["open questions"],
+      "reasoning": "1-2 short sentences",
+      "uncertainties": ["open questions, max 2"],
       "assumptions": [],
       "chunk_ids": ["supporting chunk_ids"]
     }
@@ -138,13 +140,13 @@ class ObligationsGovernanceAgent:
         data = llm_service.parse_json(raw)
 
         state.obligations = [
-            _section_from_data(s, chunk_map) for s in data.get("obligations", [])
+            _section_from_data(s, chunk_map) for s in data.get("obligations", [])[:4]
         ]
         state.governance_observations = [
-            _section_from_data(s, chunk_map) for s in data.get("governance_observations", [])
+            _section_from_data(s, chunk_map) for s in data.get("governance_observations", [])[:3]
         ]
         state.follow_up_questions = dedupe(
-            [*state.follow_up_questions, *data.get("follow_up_questions", [])]
+            [*state.follow_up_questions, *data.get("follow_up_questions", [])[:6]]
         )
 
         add_trace(
@@ -360,6 +362,6 @@ def _section_from_data(data: dict, chunk_map: dict) -> AssessmentSection:
         confidence=confidence,
         reasoning=data.get("reasoning", ""),
         citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
-        assumptions=data.get("assumptions", []),
-        uncertainties=data.get("uncertainties", []),
+        assumptions=dedupe(data.get("assumptions", []))[:2],
+        uncertainties=dedupe(data.get("uncertainties", []))[:2],
     )
