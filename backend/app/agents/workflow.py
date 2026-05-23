@@ -13,6 +13,7 @@ from app.models.analysis import (
     LIMITATION_NOTICE,
     empty_section,
 )
+from app.core.config import settings
 from app.services.citation_verifier import verify_analysis_citations
 from app.services.retrieval import index_case
 from app.storage import JsonRepository, repository
@@ -25,6 +26,43 @@ class AnalysisWorkflowError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+
+def llm_configured() -> bool:
+    """Return True if at least one agent model is set or mock mode is explicit."""
+    if settings.llm_provider == "mock":
+        return True
+    return any([
+        settings.document_fact_agent_model,
+        settings.ai_system_agent_model,
+        settings.risk_classification_agent_model,
+        settings.obligations_agent_model,
+        settings.critic_agent_model,
+        settings.chat_agent_model,
+    ])
+
+
+def _assert_llm_configured() -> None:
+    if llm_configured():
+        return
+    raise AnalysisWorkflowError(
+        "llm_not_configured",
+        (
+            "No LLM models are configured. "
+            "Set per-agent model variables in your .env file.\n\n"
+            "Example using a vLLM server:\n"
+            "  VLLM_BASE_URL=http://your-server:8000/v1\n"
+            "  VLLM_API_KEY=your-key\n"
+            "  DOCUMENT_FACT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
+            "  AI_SYSTEM_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
+            "  RISK_CLASSIFICATION_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
+            "  OBLIGATIONS_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
+            "  CRITIC_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
+            "  CHAT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n\n"
+            "See .env.example for Anthropic and OpenAI options.\n"
+            "Set LLM_PROVIDER=mock only for testing with the deterministic fallback."
+        ),
+    )
 
 
 def run_analysis_workflow(
@@ -41,6 +79,8 @@ def run_analysis_workflow(
             "no_documents",
             "Upload at least one supporting document before running analysis.",
         )
+
+    _assert_llm_configured()
 
     index_case(case_id, repo=repo)
 
@@ -69,7 +109,6 @@ def assemble_analysis_result(state: AgentState) -> AnalysisResult:
     risk_classification = state.risk_classification or empty_section("Risk classification")
     citations = _unique_citations(
         [
-            *state.citations,
             *[citation for fact in state.facts for citation in fact.citations],
             *ai_system_assessment.citations,
             *risk_classification.citations,
@@ -121,7 +160,6 @@ def _normalize_top_level_citations(result: AnalysisResult) -> AnalysisResult:
                 for section in result.governance_observations
                 for citation in section.citations
             ],
-            *result.citations,
         ]
     )
     return result.model_copy(update={"citations": nested, "limitation_notice": LIMITATION_NOTICE})

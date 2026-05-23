@@ -1,6 +1,19 @@
 import React from "react";
-import type { AnalysisResult, AssessmentSection, ExtractedFact } from "../types/api";
+import type { AnalysisResult, AssessmentSection, Citation, ExtractedFact } from "../types/api";
 import { CitationItem } from "./EvidencePanel";
+
+function CitationList({ citations, limit = 2 }: { citations: Citation[]; limit?: number }) {
+  const shown = citations.slice(0, limit);
+  const remaining = citations.length - shown.length;
+  return (
+    <div style={{ marginTop: 4 }}>
+      {shown.map((c) => <CitationItem key={c.id} c={c} />)}
+      {remaining > 0 && (
+        <div className="muted small">+{remaining} more citation{remaining === 1 ? "" : "s"} in Evidence.</div>
+      )}
+    </div>
+  );
+}
 
 function SectionView({ s }: { s: AssessmentSection }) {
   return (
@@ -25,10 +38,8 @@ function SectionView({ s }: { s: AssessmentSection }) {
       )}
       {s.citations.length > 0 && (
         <div className="sub">
-          <strong>Citations:</strong>
-          <div style={{ marginTop: 4 }}>
-            {s.citations.map((c) => <CitationItem key={c.id} c={c} />)}
-          </div>
+          <strong>Evidence:</strong>
+          <CitationList citations={s.citations} />
         </div>
       )}
     </div>
@@ -45,7 +56,7 @@ function FactView({ f }: { f: ExtractedFact }) {
       <div className="value">{f.value}</div>
       {f.citations.length > 0 && (
         <div style={{ marginTop: 6 }}>
-          {f.citations.map((c) => <CitationItem key={c.id} c={c} />)}
+          <CitationList citations={f.citations} limit={1} />
         </div>
       )}
     </div>

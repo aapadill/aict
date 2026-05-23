@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  ApiError,
   getAnalysis,
   getCase,
   listDocuments,
@@ -29,6 +30,7 @@ export default function CaseWorkspace({
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [tab, setTab] = useState<Tab>("report");
   const [error, setError] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState(false);
   const [loadingCase, setLoadingCase] = useState(true);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [running, setRunning] = useState(false);
@@ -75,12 +77,17 @@ export default function CaseWorkspace({
   const handleRunAnalysis = async () => {
     setRunning(true);
     setError(null);
+    setLlmError(false);
     try {
       const a = await runAnalysis(caseId);
       setAnalysis(a);
       setTab("report");
     } catch (e: any) {
-      setError(e?.message ?? "Analysis failed");
+      if (e instanceof ApiError && e.code === "llm_not_configured") {
+        setLlmError(true);
+      } else {
+        setError(e?.message ?? "Analysis failed");
+      }
     } finally {
       setRunning(false);
     }
@@ -172,6 +179,28 @@ export default function CaseWorkspace({
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {llmError && (
+        <div className="llm-setup-banner">
+          <strong>⚠ LLM not configured — analysis cannot run.</strong>
+          <span>
+            {" "}Add per-agent model variables to your <code>.env</code> file and restart the backend.
+            See <code>.env.example</code> for provider options (vllm, anthropic, openai).
+          </span>
+          <details style={{ marginTop: 6 }}>
+            <summary style={{ cursor: "pointer" }}>Show required variables</summary>
+            <pre>{[
+              "VLLM_BASE_URL=http://your-server:8000/v1",
+              "VLLM_API_KEY=your-key",
+              "DOCUMENT_FACT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+              "AI_SYSTEM_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+              "RISK_CLASSIFICATION_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+              "OBLIGATIONS_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+              "CRITIC_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+              "CHAT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct",
+            ].join("\n")}</pre>
+          </details>
+        </div>
+      )}
 
       <DocumentUploader
         caseId={caseId}

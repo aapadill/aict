@@ -35,6 +35,7 @@ Review the draft assessment and identify:
 
 Be constructive and specific. Your output will be merged with the existing assessment — do not
 repeat information that is already present in the draft's missing_information or uncertainties lists.
+Keep the output short: return at most 3 missing information items, 3 uncertainties, and 4 follow-up questions.
 
 Respond with valid JSON only. No markdown. No text outside the JSON object.\
 """
@@ -109,19 +110,19 @@ class CriticUncertaintyAgent:
         state.missing_information = dedupe(
             [
                 *state.missing_information,
-                *data.get("additional_missing_information", []),
+                *data.get("additional_missing_information", [])[:3],
             ]
         )
         state.uncertainties = dedupe(
             [
                 *state.uncertainties,
-                *data.get("additional_uncertainties", []),
+                *data.get("additional_uncertainties", [])[:3],
             ]
         )
         state.follow_up_questions = dedupe(
             [
                 *state.follow_up_questions,
-                *data.get("additional_follow_up_questions", []),
+                *data.get("additional_follow_up_questions", [])[:4],
             ]
         )
 

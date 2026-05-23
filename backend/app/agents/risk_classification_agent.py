@@ -68,10 +68,10 @@ Classify the risk level of the AI use case described in the uploaded document ch
 
 Return ONLY this JSON:
 {
-  "conclusion": "one-sentence risk classification conclusion",
+  "conclusion": "one short, plain-language risk classification conclusion",
   "confidence": "low|medium|high",
-  "reasoning": "3-5 sentence reasoning referencing specific Annex III categories or Article 5 provisions where applicable",
-  "uncertainties": ["list of open questions that could change the classification"],
+  "reasoning": "2-3 short sentences referencing specific Annex III categories or Article 5 provisions where applicable",
+  "uncertainties": ["only open questions that could change the classification, max 3"],
   "chunk_ids": ["chunk_ids from the provided context that ground the conclusion"]
 }\
 """
@@ -145,7 +145,7 @@ class RiskClassificationAgent:
             reasoning=data.get("reasoning", ""),
             citations=citations_for_ids(data.get("chunk_ids", []), chunk_map),
             assumptions=["Classification is preliminary and based on currently uploaded materials."],
-            uncertainties=dedupe(data.get("uncertainties", [])),
+            uncertainties=dedupe(data.get("uncertainties", []))[:3],
         )
         add_trace(
             state,

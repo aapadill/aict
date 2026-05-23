@@ -32,14 +32,15 @@ Your task is to extract 12 specific facts about an AI use case from the provided
 Each chunk has a chunk_id you must reference when citing evidence.
 
 For each fact, determine:
-- "value": a clear, concise description (empty string "" if not present in the documents)
+- "value": a clear, concise description, usually under 20 words (empty string "" if not present in the documents)
 - "status":
   - "found" if the documents clearly and explicitly state this information
   - "uncertain" if the documents suggest or imply it but do not state it explicitly
   - "missing" if the documents contain no relevant information for this fact
 - "chunk_ids": list of chunk_ids from the provided context that support this fact (empty list if missing)
 
-Also write a "summary": 2-3 sentence plain-language overview of the AI use case based solely on the documents.
+Keep values readable for a non-lawyer. Do not copy long source passages into values.
+Also write a "summary": at most 2 short plain-language sentences based solely on the documents.
 
 Respond with valid JSON only. No markdown. No text outside the JSON object.\
 """
@@ -70,7 +71,6 @@ class DocumentFactAgent:
             return self._run_heuristic(state)
 
         citations = chunks_as_citations(chunks)
-        add_unique_citations(state, citations)
         chunk_map = build_chunk_map(citations)
 
         user_prompt = (
@@ -103,6 +103,10 @@ class DocumentFactAgent:
             )
 
         state.facts = facts
+        add_unique_citations(
+            state,
+            [citation for fact in facts for citation in fact.citations],
+        )
         state.summary = data.get("summary") or ""
         missing = [fact.label for fact in facts if fact.status == "missing"]
         state.missing_information = dedupe([*state.missing_information, *missing])

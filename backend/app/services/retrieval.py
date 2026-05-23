@@ -262,7 +262,7 @@ def _split_text(text: str) -> list[str]:
             continue
         if current and len(current) + len(paragraph) + 2 > CHUNK_SIZE:
             chunks.append(current.strip())
-            overlap = current[-CHUNK_OVERLAP:].strip()
+            overlap = _overlap_tail(current)
             current = f"{overlap}\n\n{paragraph}" if overlap else paragraph
         else:
             current = f"{current}\n\n{paragraph}".strip() if current else paragraph
@@ -282,6 +282,14 @@ def _split_long_paragraph(paragraph: str) -> list[str]:
             break
         start = max(end - CHUNK_OVERLAP, start + 1)
     return [chunk for chunk in chunks if chunk]
+
+
+def _overlap_tail(text: str) -> str:
+    tail = text[-CHUNK_OVERLAP:].strip()
+    match = re.search(r"[\s.!?;:,]+", tail)
+    if match and match.end() < len(tail):
+        return tail[match.end():].strip()
+    return tail
 
 
 def _chunk_location(location: Any, index: int, _text_length: int) -> str | None:
@@ -324,6 +332,8 @@ def _snippet_for_query(text: str, query: str, max_length: int = 320) -> str:
             break
 
     if best_index < 0:
+        start = 0
+        end = min(len(text), max_length)
         snippet = text[:max_length]
     else:
         raw_index = _approx_raw_index(text, best_index)
@@ -331,10 +341,23 @@ def _snippet_for_query(text: str, query: str, max_length: int = 320) -> str:
         end = min(len(text), start + max_length)
         snippet = text[start:end]
 
-    snippet = re.sub(r"\s+", " ", snippet).strip()
+    snippet = _clean_snippet_window(snippet, at_start=start == 0, at_end=end == len(text))
     if len(snippet) > max_length:
         snippet = snippet[: max_length - 1].rstrip() + "..."
     return snippet
+
+
+def _clean_snippet_window(snippet: str, at_start: bool, at_end: bool) -> str:
+    compact = re.sub(r"\s+", " ", snippet).strip()
+    if not at_start:
+        trimmed = re.sub(r"^\S+\s+", "", compact, count=1)
+        if len(trimmed) >= 40:
+            compact = trimmed
+    if not at_end:
+        trimmed = re.sub(r"\s+\S*$", "", compact)
+        if len(trimmed) >= 40:
+            compact = trimmed
+    return compact.strip(" ,;:")
 
 
 def _approx_raw_index(text: str, normalized_index: int) -> int:

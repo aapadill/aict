@@ -38,9 +38,11 @@ function setMode(m: ApiMode) {
 
 export class ApiError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  code?: string;
+  constructor(message: string, status?: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -65,15 +67,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     let detail = res.statusText;
+    let code: string | undefined;
     try {
       const data = await res.json();
-      detail = data?.detail || data?.message || JSON.stringify(data);
+      if (data?.detail && typeof data.detail === "object") {
+        detail = data.detail.message || JSON.stringify(data.detail);
+        code = data.detail.error;
+      } else {
+        detail = data?.detail || data?.message || JSON.stringify(data);
+      }
     } catch {
       try {
         detail = (await res.text()) || detail;
       } catch {}
     }
-    throw new ApiError(`HTTP ${res.status}: ${detail}`, res.status);
+    throw new ApiError(`HTTP ${res.status}: ${detail}`, res.status, code);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -242,6 +250,10 @@ export function sendChatMessage(caseId: string, message: string): Promise<ChatRe
       return response;
     }
   );
+}
+
+export async function checkHealth(): Promise<{ status: string; llm_configured: boolean }> {
+  return request("/health");
 }
 
 export { API_BASE_URL };

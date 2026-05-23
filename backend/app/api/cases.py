@@ -281,10 +281,12 @@ def analyze_case(
             raise _api_error(status.HTTP_404_NOT_FOUND, exc.code, exc.message) from exc
         if exc.code == "no_documents":
             raise _api_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message) from exc
+        if exc.code == "llm_not_configured":
+            raise _api_error(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.code, exc.message) from exc
         raise _api_error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             exc.code,
-            "Analysis could not be completed.",
+            exc.message,
         ) from exc
 
 

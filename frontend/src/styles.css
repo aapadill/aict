@@ -125,6 +125,26 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-mut
   font-size: 13px;
 }
 
+.llm-setup-banner {
+  background: #fffbea;
+  border: 1px solid #e6c94a;
+  color: #7a5c00;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.llm-setup-banner pre {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: #fdf6d8;
+  border: 1px solid #e6c94a;
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .empty {
   text-align: center;
   padding: 28px 16px;
