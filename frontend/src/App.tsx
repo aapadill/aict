@@ -12,14 +12,17 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="row" style={{ gap: 10 }}>
-          <h1>AI Act Compliance Assistant</h1>
-          <span className="crumbs small">
-            {openCaseId ? <>/ case <span className="mono">{openCaseId}</span></> : "/ cases"}
-          </span>
+        <div className="brand-block">
+          <div className="brand-mark">AI</div>
+          <div>
+            <h1>AI Act Compliance Assistant</h1>
+            <span className="crumbs">
+              {openCaseId ? <>Case <span className="mono">{openCaseId}</span></> : "Cases"}
+            </span>
+          </div>
         </div>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="small faint">API: <span className="mono">{API_BASE_URL}</span></span>
+        <div className="topbar-meta">
+          <span className="api-pill">API <span className="mono">{API_BASE_URL}</span></span>
           <span className={`status-pill ${mode === "mock" ? "mock" : ""}`}>
             {mode === "mock" ? "Mock fallback" : "Live"}
           </span>

@@ -17,6 +17,13 @@ import { buildMarkdownReport, downloadMarkdown } from "../utils/exportReport";
 
 type Tab = "report" | "evidence" | "chat" | "trace";
 
+const TAB_LABELS: Record<Tab, string> = {
+  report: "Report",
+  evidence: "Evidence",
+  chat: "Chat",
+  trace: "Agent trace",
+};
+
 export default function CaseWorkspace({
   caseId,
   onBack,
@@ -112,6 +119,13 @@ export default function CaseWorkspace({
     }
   };
 
+  const tabItems: { id: Tab; label: string; meta: string }[] = [
+    { id: "report", label: TAB_LABELS.report, meta: analysis ? "Ready" : "Draft" },
+    { id: "evidence", label: TAB_LABELS.evidence, meta: `${analysis?.citations.length ?? 0}` },
+    { id: "chat", label: TAB_LABELS.chat, meta: "Ask" },
+    { id: "trace", label: TAB_LABELS.trace, meta: `${analysis?.agent_trace.length ?? 0}` },
+  ];
+
   if (loadingCase && !caseData) {
     return <div className="card"><span className="spinner" /> Loading case…</div>;
   }
@@ -125,19 +139,20 @@ export default function CaseWorkspace({
   }
 
   return (
-    <div>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <button className="ghost" onClick={onBack}>← Cases</button>
-      </div>
-
-      <div className="card">
+    <div className="workspace-page">
+      <div className="workspace-hero">
+        <button className="ghost back-button" onClick={onBack}>Cases</button>
         <div className="workspace-head">
-          <div className="title-block" style={{ minWidth: 0, flex: 1 }}>
-            <h1 style={{ wordBreak: "break-word" }}>{caseData.title}</h1>
-            {caseData.description && <p style={{ wordBreak: "break-word" }}>{caseData.description}</p>}
-            <div className="small faint" style={{ marginTop: 4 }}>
-              Created {new Date(caseData.created_at).toLocaleString()} · {documents.length} document(s) ·{" "}
-              Analysis: {analysis ? <span className="badge parsed">ready</span> : <span className="badge">none</span>}
+          <div className="title-block">
+            <div className="eyebrow">Compliance review</div>
+            <h1>{caseData.title}</h1>
+            {caseData.description && <p>{caseData.description}</p>}
+            <div className="workspace-meta">
+              <span>Created {new Date(caseData.created_at).toLocaleString()}</span>
+              <span>{documents.length} document{documents.length === 1 ? "" : "s"}</span>
+              <span className={`badge ${analysis ? "parsed" : ""}`}>
+                {analysis ? "analysis ready" : "no analysis"}
+              </span>
             </div>
           </div>
           <div className="actions">
@@ -149,7 +164,7 @@ export default function CaseWorkspace({
               disabled={documents.length === 0}
               title={documents.length === 0 ? "Upload at least one document first" : "Run AI Act analysis"}
             >
-              ▶ Run analysis
+              Run analysis
             </LoadingButton>
             <LoadingButton
               loading={copying}
@@ -157,7 +172,7 @@ export default function CaseWorkspace({
               onClick={handleCopy}
               disabled={!analysis}
             >
-              {copied ? "✓ Copied" : "⧉ Copy Markdown"}
+              {copied ? "Copied" : "Copy Markdown"}
             </LoadingButton>
             <LoadingButton
               loading={exporting}
@@ -165,7 +180,7 @@ export default function CaseWorkspace({
               onClick={handleDownload}
               disabled={!analysis}
             >
-              ⬇ Download .md
+              Download .md
             </LoadingButton>
           </div>
         </div>
@@ -173,63 +188,108 @@ export default function CaseWorkspace({
 
       {error && <div className="error-banner">{error}</div>}
 
-      <DocumentUploader
-        caseId={caseId}
-        documents={documents}
-        onUploaded={(newDocs) => setDocuments((d) => [...d, ...newDocs])}
-      />
-
-      <div className="tabs">
-        <button className={tab === "report" ? "active" : ""} onClick={() => setTab("report")}>Report</button>
-        <button className={tab === "evidence" ? "active" : ""} onClick={() => setTab("evidence")}>Evidence</button>
-        <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>Chat</button>
-        <button className={tab === "trace" ? "active" : ""} onClick={() => setTab("trace")}>Agent trace</button>
-      </div>
-
-      {tab === "report" && (
-        loadingAnalysis ? (
-          <div className="card"><span className="spinner" /> Loading analysis…</div>
-        ) : analysis ? (
-          <AnalysisReport a={analysis} />
-        ) : (
-          <EmptyState
-            icon="◷"
-            title="No analysis yet"
-            hint={documents.length === 0
-              ? "Upload at least one document, then run analysis."
-              : "Click 'Run analysis' to generate an AI Act assessment."}
-            action={
-              <LoadingButton
-                className="primary"
-                loading={running}
-                loadingText="Analyzing…"
-                onClick={handleRunAnalysis}
-                disabled={documents.length === 0}
-              >
-                ▶ Run analysis
-              </LoadingButton>
-            }
+      <div className="workspace-grid">
+        <aside className="workspace-rail">
+          <DocumentUploader
+            caseId={caseId}
+            documents={documents}
+            onUploaded={(newDocs) => setDocuments((d) => [...d, ...newDocs])}
           />
-        )
-      )}
+          <div className="panel case-summary">
+            <h2>Case status</h2>
+            <div className="metric-row">
+              <span>Documents</span>
+              <strong>{documents.length}</strong>
+            </div>
+            <div className="metric-row">
+              <span>Citations</span>
+              <strong>{analysis?.citations.length ?? 0}</strong>
+            </div>
+            <div className="metric-row">
+              <span>Open questions</span>
+              <strong>{analysis?.follow_up_questions.length ?? 0}</strong>
+            </div>
+            <div className="metric-row">
+              <span>Trace events</span>
+              <strong>{analysis?.agent_trace.length ?? 0}</strong>
+            </div>
+          </div>
+        </aside>
 
-      {tab === "evidence" && (
-        <div className="card">
-          <h2>Evidence & citations</h2>
-          <EvidencePanel citations={analysis?.citations ?? []} />
-        </div>
-      )}
+        <section className="workspace-main">
+          <div className="tabs" role="tablist" aria-label="Case workspace">
+            {tabItems.map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={tab === item.id}
+                className={tab === item.id ? "active" : ""}
+                onClick={() => setTab(item.id)}
+              >
+                <span>{item.label}</span>
+                <small>{item.meta}</small>
+              </button>
+            ))}
+          </div>
 
-      {tab === "chat" && (
-        <ChatPanel caseId={caseId} onReassessRequested={handleRunAnalysis} />
-      )}
+          <div className="tab-panel" role="tabpanel" aria-label={TAB_LABELS[tab]}>
+            {tab === "report" && (
+              loadingAnalysis ? (
+                <div className="panel"><span className="spinner" /> Loading analysis…</div>
+              ) : analysis ? (
+                <AnalysisReport a={analysis} />
+              ) : (
+                <EmptyState
+                  icon="◷"
+                  title="No analysis yet"
+                  hint={documents.length === 0
+                    ? "Upload at least one document, then run analysis."
+                    : "Click Run analysis to generate an AI Act assessment."}
+                  action={
+                    <LoadingButton
+                      className="primary"
+                      loading={running}
+                      loadingText="Analyzing…"
+                      onClick={handleRunAnalysis}
+                      disabled={documents.length === 0}
+                    >
+                      Run analysis
+                    </LoadingButton>
+                  }
+                />
+              )
+            )}
 
-      {tab === "trace" && (
-        <div className="card">
-          <h2>Agent trace</h2>
-          <AgentTrace events={analysis?.agent_trace ?? []} />
-        </div>
-      )}
+            {tab === "evidence" && (
+              <div className="panel">
+                <div className="section-head">
+                  <div>
+                    <h2>Evidence & citations</h2>
+                    <p>{analysis?.citations.length ?? 0} cited source{(analysis?.citations.length ?? 0) === 1 ? "" : "s"}</p>
+                  </div>
+                </div>
+                <EvidencePanel citations={analysis?.citations ?? []} />
+              </div>
+            )}
+
+            {tab === "chat" && (
+              <ChatPanel caseId={caseId} onReassessRequested={handleRunAnalysis} />
+            )}
+
+            {tab === "trace" && (
+              <div className="panel">
+                <div className="section-head">
+                  <div>
+                    <h2>Agent trace</h2>
+                    <p>{analysis?.agent_trace.length ?? 0} event{(analysis?.agent_trace.length ?? 0) === 1 ? "" : "s"}</p>
+                  </div>
+                </div>
+                <AgentTrace events={analysis?.agent_trace ?? []} />
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

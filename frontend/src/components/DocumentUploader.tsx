@@ -39,15 +39,19 @@ export default function DocumentUploader({
   };
 
   return (
-    <div className="card">
-      <div className="row between" style={{ marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>Documents</h2>
+    <div className="panel document-panel">
+      <div className="section-head compact-head">
+        <div>
+          <h2>Documents</h2>
+          <p>{documents.length} file{documents.length === 1 ? "" : "s"} in this case</p>
+        </div>
         <LoadingButton
           loading={uploading}
           loadingText="Uploading…"
           onClick={() => inputRef.current?.click()}
+          className="compact"
         >
-          ⬆ Upload files
+          Upload
         </LoadingButton>
         <input
           ref={inputRef}
@@ -88,7 +92,8 @@ export default function DocumentUploader({
         ) : (
           documents.map((d) => (
             <div key={d.id} className="doc-row">
-              <span className="name">📄 {d.filename}</span>
+              <span className="file-icon" aria-hidden>DOC</span>
+              <span className="name">{d.filename}</span>
               <span className={`badge ${d.status}`}>{d.status}</span>
             </div>
           ))

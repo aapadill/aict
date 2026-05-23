@@ -10,7 +10,6 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [showForm, setShowForm] = useState(false);
 
   const load = async () => {
     setError(null);
@@ -36,7 +35,6 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
       const c = await createCase({ title: title.trim(), description: description.trim() || undefined });
       setTitle("");
       setDescription("");
-      setShowForm(false);
       await load();
       onOpen(c.id);
     } catch (e: any) {
@@ -47,47 +45,19 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
   };
 
   return (
-    <div>
-      <div className="card">
-        <div className="row between" style={{ marginBottom: showForm ? 12 : 0 }}>
-          <h2 style={{ margin: 0 }}>Cases</h2>
-          <button className="primary" onClick={() => setShowForm((s) => !s)}>
-            {showForm ? "Cancel" : "+ New case"}
+    <div className="dashboard-layout">
+      <section className="dashboard-main panel">
+        <div className="section-head">
+          <div>
+            <h2>Cases</h2>
+            <p>{cases?.length ?? 0} local review{(cases?.length ?? 0) === 1 ? "" : "s"}</p>
+          </div>
+          <button className="primary compact" onClick={() => document.getElementById("case-title")?.focus()}>
+            New case
           </button>
         </div>
-        {showForm && (
-          <form onSubmit={submit} className="col" style={{ marginTop: 8 }}>
-            <div>
-              <label>Title</label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Recruitment ranking model"
-                required
-                autoFocus
-              />
-            </div>
-            <div>
-              <label>Description (optional)</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief description of the AI system or use case."
-              />
-            </div>
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <LoadingButton type="submit" className="primary" loading={creating} loadingText="Creating…">
-                Create case
-              </LoadingButton>
-            </div>
-          </form>
-        )}
-      </div>
 
-      {error && <div className="error-banner">{error}</div>}
-
-      <div className="card">
-        <h2>All cases</h2>
+        {error && <div className="error-banner">{error}</div>}
         {cases === null ? (
           <div className="muted small"><span className="spinner" /> Loading cases…</div>
         ) : cases.length === 0 ? (
@@ -96,28 +66,54 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
             title="No cases yet"
             hint="Create your first case to start a compliance review."
             action={
-              <button className="primary" onClick={() => setShowForm(true)}>
-                + New case
+              <button className="primary" onClick={() => document.getElementById("case-title")?.focus()}>
+                New case
               </button>
             }
           />
         ) : (
           <div className="case-grid">
             {cases.map((c) => (
-              <div key={c.id} className="case-item" onClick={() => onOpen(c.id)}>
+              <button key={c.id} className="case-item" onClick={() => onOpen(c.id)}>
                 <div className="title">{c.title}</div>
-                {c.description && <div className="small muted" style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden"
-                }}>{c.description}</div>}
-                <div className="meta">Updated {new Date(c.updated_at).toLocaleString()}</div>
-              </div>
+                {c.description && <div className="small muted line-clamp">{c.description}</div>}
+                <div className="meta">
+                  <span>Updated {new Date(c.updated_at).toLocaleString()}</span>
+                  <span>Open</span>
+                </div>
+              </button>
             ))}
           </div>
         )}
-      </div>
+      </section>
+
+      <aside className="dashboard-side panel">
+        <h2>New case</h2>
+        <form onSubmit={submit} className="form-stack">
+          <div>
+            <label htmlFor="case-title">Title</label>
+            <input
+              id="case-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Recruitment ranking model"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="case-description">Description</label>
+            <textarea
+              id="case-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of the AI system or use case."
+            />
+          </div>
+          <LoadingButton type="submit" className="primary full" loading={creating} loadingText="Creating…">
+            Create case
+          </LoadingButton>
+        </form>
+      </aside>
     </div>
   );
 }

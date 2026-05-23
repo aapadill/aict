@@ -68,8 +68,13 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="card">
-      <h2>Follow-up chat</h2>
+    <div className="panel chat-panel">
+      <div className="section-head">
+        <div>
+          <h2>Follow-up chat</h2>
+          <p>{messages?.length ?? 0} message{(messages?.length ?? 0) === 1 ? "" : "s"}</p>
+        </div>
+      </div>
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -95,7 +100,7 @@ export default function ChatPanel({
       )}
 
       {lastResponse && (lastResponse.new_facts_detected.length > 0 || lastResponse.reassessment_recommended) && (
-        <div className="card" style={{ marginTop: 10, background: "#fff8e1", borderColor: "#e7c97a" }}>
+        <div className="notice action-notice">
           {lastResponse.new_facts_detected.length > 0 && (
             <div className="small">
               <strong>New facts detected:</strong>
