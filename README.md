@@ -148,7 +148,7 @@ Equivalent raw Compose command:
 docker compose up --build
 ```
 
-If ports `8000` or `5173` are already busy:
+If ports `8001` or `5173` are already busy:
 
 ```bash
 make up-alt
@@ -163,8 +163,8 @@ BACKEND_PORT=8001 FRONTEND_PORT=5174 VITE_API_BASE_URL=http://localhost:8001 COR
 Then open:
 
 - Frontend: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:8000`
-- Backend health check: `http://127.0.0.1:8000/health`
+- Backend API: `http://127.0.0.1:8001`
+- Backend health check: `http://127.0.0.1:8001/health`
 
 Useful container commands:
 
@@ -203,7 +203,7 @@ cd backend
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 Subsequent runs:
@@ -211,13 +211,13 @@ Subsequent runs:
 ```bash
 cd backend
 . .venv/bin/activate
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 Verify the backend is up:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8001/health
 # {"status":"ok"}
 ```
 
@@ -239,8 +239,8 @@ npm run dev
 
 Expected local URLs:
 
-- Backend API: `http://127.0.0.1:8000`
-- Backend health check: `http://127.0.0.1:8000/health`
+- Backend API: `http://127.0.0.1:8001`
+- Backend health check: `http://127.0.0.1:8001/health`
 - Frontend: `http://127.0.0.1:5173`
 
 ## Environment Variables
@@ -249,7 +249,7 @@ Expected `.env` keys:
 
 ```bash
 BACKEND_HOST=127.0.0.1
-BACKEND_PORT=8000
+BACKEND_PORT=8001
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 DATA_DIR=backend/data
 STATE_DIR=backend/data/state
@@ -271,7 +271,7 @@ CHAT_AGENT_MODEL=vllm:llama3.1
 EMBEDDING_PROVIDER=local
 
 # Frontend.
-VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_BASE_URL=http://127.0.0.1:8001
 ```
 
 For a backend running inside Docker and an Ollama server running on the host, use `VLLM_BASE_URL=http://host.docker.internal:11434/v1` instead of `127.0.0.1`.

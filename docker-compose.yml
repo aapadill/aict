@@ -4,7 +4,7 @@ services:
       context: ./backend
     environment:
       BACKEND_HOST: 0.0.0.0
-      BACKEND_PORT: 8000
+      BACKEND_PORT: 8001
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       DATA_DIR: /app/runtime-data
       STATE_DIR: /app/runtime-data/state
@@ -27,7 +27,7 @@ services:
       CRITIC_AGENT_MODEL: ${CRITIC_AGENT_MODEL:-}
       CHAT_AGENT_MODEL: ${CHAT_AGENT_MODEL:-}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-8001}:8001"
     volumes:
       - backend-data:/app/runtime-data
     healthcheck:
@@ -36,7 +36,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)",
         ]
       interval: 10s
       timeout: 3s
@@ -47,7 +47,7 @@ services:
     build:
       context: ./frontend
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8001}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     depends_on:

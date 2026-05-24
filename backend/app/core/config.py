@@ -28,7 +28,7 @@ def _resolve(path_value: str) -> Path:
 @dataclass(frozen=True)
 class Settings:
     backend_host: str = field(default_factory=lambda: os.getenv("BACKEND_HOST", "127.0.0.1"))
-    backend_port: int = field(default_factory=lambda: int(os.getenv("BACKEND_PORT", "8000")))
+    backend_port: int = field(default_factory=lambda: int(os.getenv("BACKEND_PORT", "8001")))
     cors_origins: list[str] = field(
         default_factory=lambda: _split_csv(
             os.getenv(
@@ -56,7 +56,7 @@ class Settings:
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     vllm_base_url: str = field(
-        default_factory=lambda: os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
+        default_factory=lambda: os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
     )
     vllm_api_key: str = field(default_factory=lambda: os.getenv("VLLM_API_KEY", ""))
     embedding_provider: str = field(

@@ -706,7 +706,7 @@ Important constraints:
 - Do not create a backend.
 - Do not use Supabase, Firebase, auth, database tables, edge functions, or server-side storage.
 - Use REST API calls to a FastAPI backend.
-- The API base URL must come from `VITE_API_BASE_URL`, defaulting to `http://localhost:8000`.
+- The API base URL must come from `VITE_API_BASE_URL`, defaulting to `http://localhost:8001`.
 - The deliverable must be a self-contained Vite React TypeScript app in a folder named `frontend`.
 - The repo-level Docker flow will run this app through `frontend/Dockerfile` and `docker-compose.yml`, so keep the app compatible with `npm ci` and `npm run dev -- --host 0.0.0.0`.
 - Include `package.json`, `src/`, `index.html`, Vite config, TypeScript config, and `.env.example`.
@@ -911,7 +911,7 @@ export type ChatResponse = {
 Use these API functions in `src/api/client.ts`:
 
 ```ts
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
 
 createCase(input: { title: string; description?: string }): Promise<Case>
 listCases(): Promise<Case[]>
@@ -1096,7 +1096,7 @@ Import the Lovable-generated frontend into this repo and perform final integrati
 ## Implementation Details
 
 - Copy the downloaded Lovable `frontend/` folder into the repo root.
-- Verify `frontend/.env.example` includes `VITE_API_BASE_URL=http://localhost:8000`.
+- Verify `frontend/.env.example` includes `VITE_API_BASE_URL=http://localhost:8001`.
 - Verify `frontend/Dockerfile` can run the app in Docker Compose.
 - Run the frontend through `make up`; use `npm install` and `npm run dev` from `frontend/` only for manual debugging.
 - Fix only integration mismatches:

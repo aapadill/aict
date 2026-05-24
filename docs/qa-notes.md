@@ -26,7 +26,7 @@ Equivalent raw commands to run:
 
 ```bash
 docker compose up --build
-curl -sS http://127.0.0.1:8000/health
+curl -sS http://127.0.0.1:8001/health
 docker compose ps
 docker compose logs -f
 docker compose run --rm backend python -m pytest
@@ -49,8 +49,8 @@ npm audit --audit-level=moderate
 
 ```bash
 cd backend
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-curl -sS http://127.0.0.1:8000/health
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+curl -sS http://127.0.0.1:8001/health
 ```
 
 ```bash

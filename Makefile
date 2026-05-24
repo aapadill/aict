@@ -1,6 +1,6 @@
 .PHONY: help up up-alt down clean build rebuild logs ps health test-backend
 
-BACKEND_PORT ?= 8000
+BACKEND_PORT ?= 8001
 FRONTEND_PORT ?= 5173
 VITE_API_BASE_URL ?= http://localhost:$(BACKEND_PORT)
 CORS_ORIGINS ?= http://localhost:$(FRONTEND_PORT),http://127.0.0.1:$(FRONTEND_PORT)
