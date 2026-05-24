@@ -112,16 +112,6 @@ export default function CaseDashboard({ onOpen }: { onOpen: (id: string) => void
             icon="◇"
             title="No cases yet"
             hint="Create your first case to start a compliance review."
-            action={
-              <LoadingButton
-                className="primary"
-                loading={creating}
-                loadingText="Starting…"
-                onClick={startNewCase}
-              >
-                <FilePlus2 size={15} /> New case
-              </LoadingButton>
-            }
           />
         ) : (
           <div className="case-list">
