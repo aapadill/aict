@@ -157,7 +157,7 @@ make up-alt
 Equivalent raw Compose command:
 
 ```bash
-BACKEND_PORT=8001 FRONTEND_PORT=5174 VITE_API_BASE_URL=http://localhost:8001 CORS_ORIGINS=http://localhost:5174,http://127.0.0.1:5174 docker compose up --build
+BACKEND_PORT=8002 FRONTEND_PORT=5174 VITE_API_BASE_URL=http://localhost:8002 CORS_ORIGINS=http://localhost:5174,http://127.0.0.1:5174 docker compose up --build
 ```
 
 Then open:

@@ -8,7 +8,7 @@ CORS_ORIGINS ?= http://localhost:$(FRONTEND_PORT),http://127.0.0.1:$(FRONTEND_PO
 help:
 	@printf "Targets:\n"
 	@printf "  make up            Start backend and frontend with Docker Compose\n"
-	@printf "  make up-alt        Start on ports 8001 and 5174\n"
+	@printf "  make up-alt        Start on ports 8002 and 5174\n"
 	@printf "  make down          Stop containers\n"
 	@printf "  make clean         Stop containers and remove demo data volume\n"
 	@printf "  make build         Build Docker images\n"
@@ -22,7 +22,7 @@ up:
 	BACKEND_PORT=$(BACKEND_PORT) FRONTEND_PORT=$(FRONTEND_PORT) VITE_API_BASE_URL=$(VITE_API_BASE_URL) CORS_ORIGINS=$(CORS_ORIGINS) docker compose up --build
 
 up-alt:
-	$(MAKE) up BACKEND_PORT=8001 FRONTEND_PORT=5174
+	$(MAKE) up BACKEND_PORT=8002 FRONTEND_PORT=5174
 
 down:
 	docker compose down

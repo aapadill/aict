@@ -21,7 +21,7 @@ This document defines the minimum architecture for the hackathon MVP. Keep imple
 
 The preferred demo runtime is Docker Compose from the repo root.
 
-- `backend` container: FastAPI app on container port `8001`, exposed as `${BACKEND_PORT:-8001}`.
+- `backend` container: FastAPI app on container port `8000`, exposed on the host as `${BACKEND_PORT:-8001}`.
 - `frontend` container: Vite app on container port `5173`, exposed as `${FRONTEND_PORT:-5173}`.
 - `backend-data` volume: persistent local demo state for cases, uploaded files, extracted text, chunks, analysis history, active-analysis markers, evidence, and messages.
 - Built-in AI Act corpus: copied into the backend image at `/app/data/corpus`.

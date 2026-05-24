@@ -54,7 +54,7 @@ def _assert_llm_configured() -> None:
             f"Missing: {', '.join(_missing_analysis_models())}.\n"
             "Set per-agent model variables in your .env file.\n\n"
             "Example using a vLLM server:\n"
-            "  VLLM_BASE_URL=http://your-server:8001/v1\n"
+            "  VLLM_BASE_URL=http://your-model-server:8000/v1\n"
             "  VLLM_API_KEY=your-key\n"
             "  DOCUMENT_FACT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
             "  AI_SYSTEM_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
