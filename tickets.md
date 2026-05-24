@@ -4,6 +4,8 @@ These tickets are written so each one can be pasted into a coding agent as a sta
 
 Current implementation note: the live repo has moved beyond the original ticket prompts. The current UI includes a home landing page, cases board, locked analysis workflow, document deletion before analysis, report timeline/history, and read-only historical snapshots. Current dependency sources of truth are `backend/pyproject.toml` and `frontend/package.json`; the frontend does not require Three.js, React Three Fiber, Playwright, Supabase, auth packages, or a frontend database.
 
+Current LLM mode note: analysis is guarded. There is no runtime mock/no-key analysis mode; real provider settings and per-agent model variables are required. If required model variables are missing, analysis returns `llm_not_configured`.
+
 ## Global Build Assumptions
 
 - Product: aict, an EU AI Act compliance workspace, for one AI use case per session.
@@ -18,7 +20,7 @@ Current implementation note: the live repo has moved beyond the original ticket 
 - Citation rule: agents may interpret evidence, but they may not invent citations. Citation objects must come from stored source chunks and pass deterministic verification before results are saved or returned.
 - Required limitation text: "This is a decision-support draft, not final legal advice."
 - Keep the MVP local-first. Do not add auth, payments, cloud deployment, or multi-tenant complexity.
-- If an external LLM or embedding service is unavailable, implement a clean fallback or mock so the demo path still works.
+- If an external LLM service is unavailable, do not produce a pretend assessment. Surface `llm_not_configured` or `llm_call_failed` and configure a reachable provider before the demo.
 
 ## Shared Data Contracts
 
@@ -579,7 +581,7 @@ Implement the core multi-agent analysis functions for aict. The goal is to produ
   - identifies possible provider/deployer roles
   - checks transparency/labelling/GPAI relevance
   - produces practical governance observations: documentation, risk management, logging, monitoring, human oversight, accountability
-- Use a configured LLM if available. If not available, implement deterministic heuristic output good enough for demo/testing.
+- Require configured LLM model variables for runtime analysis. Do not implement a runtime mock or no-key heuristic assessment path; tests may patch provider calls locally, but the app should return `llm_not_configured` when required model settings are absent.
 
 ## Output Requirements
 
@@ -708,7 +710,7 @@ Important constraints:
 - The deliverable must be a self-contained Vite React TypeScript app in a folder named `frontend`.
 - The repo-level Docker flow will run this app through `frontend/Dockerfile` and `docker-compose.yml`, so keep the app compatible with `npm ci` and `npm run dev -- --host 0.0.0.0`.
 - Include `package.json`, `src/`, `index.html`, Vite config, TypeScript config, and `.env.example`.
-- Use mock data only as a fallback when the backend is unavailable. The real path must call the API contracts below.
+- Do not use mock data when the backend is unavailable. Surface a clear API/network error so the demo does not hide backend setup problems.
 - Current implementation note: the app now has a lightweight home landing page and a Board button that opens the usable cases board.
 - The UI should feel like a serious compliance review tool: compact, structured, readable, and work-focused.
 - Include the visible limitation text: "This is a decision-support draft, not final legal advice."
@@ -944,7 +946,7 @@ Design notes:
 - Use simple icons where helpful for upload, analyze, copy, download, chat, warning, and check states.
 - Avoid decorative hero sections, gradient backgrounds, marketing copy, and oversized headings.
 - Prefer dense but readable compliance-tool layout.
-- Include mock/fallback data in a clearly isolated file such as `src/api/mockData.ts`; do not let mock mode hide real API errors when the backend is configured.
+- Do not include frontend mock data or API fallback mode. Network failures and backend errors should be visible in the UI.
 
 ## Acceptance Criteria
 

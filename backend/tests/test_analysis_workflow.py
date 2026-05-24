@@ -1,10 +1,11 @@
 from pathlib import Path
+from dataclasses import replace
 
 import pytest
 
 from app.agents import workflow as workflow_module
 from app.agents.risk_classification_agent import RiskClassificationAgent as RealRiskClassificationAgent
-from app.agents.workflow import run_analysis_workflow
+from app.agents.workflow import AnalysisWorkflowError, run_analysis_workflow
 from app.models.analysis import Citation
 from app.storage.json_repository import JsonRepository
 
@@ -27,11 +28,30 @@ def test_run_analysis_workflow_saves_schema_valid_result(tmp_path: Path) -> None
         "RiskClassificationAgent",
         "ObligationsGovernanceAgent",
         "CriticUncertaintyAgent",
+        "CriticUncertaintyAgent",
     ]
     assert result.follow_up_questions
     assert result.limitation_notice == ""
     assert result.citations
     assert all(citation.verified is True for citation in result.citations)
+
+
+def test_workflow_requires_configured_analysis_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, case_id = _sample_repo(tmp_path)
+    monkeypatch.setattr(
+        workflow_module,
+        "settings",
+        replace(workflow_module.settings, document_fact_agent_model=""),
+    )
+
+    with pytest.raises(AnalysisWorkflowError) as error:
+        run_analysis_workflow(case_id, repo=repo)
+
+    assert error.value.code == "llm_not_configured"
+    assert "DOCUMENT_FACT_AGENT_MODEL" in error.value.message
 
 
 def test_workflow_verification_removes_injected_fake_citation(

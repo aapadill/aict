@@ -39,7 +39,8 @@ The MVP should run on a developer laptop with no required cloud services.
 - Structured storage: simple local JSON repository under `backend/data/state/`.
 - File storage: uploaded files, extracted text, corpus files, and indexes under `backend/data/`.
 - Retrieval: local chunk store with lexical or lightweight vector search.
-- LLM and embeddings: optional. If unavailable, the backend should expose a mock or fallback path so the demo still works.
+- LLMs: required for analysis and follow-up chat. Configure per-agent model variables before running the demo.
+- Embeddings: local by default through the lightweight retrieval layer.
 - Runtime: Docker Compose is the preferred demo path; manual backend/frontend commands remain available for local debugging.
 
 The `chunks` store is the source of truth for citations. Agents may interpret retrieved evidence, but every returned citation must point to a stored chunk and pass a deterministic verifier.
@@ -186,7 +187,9 @@ The backend keeps local state in the `backend-data` Docker volume. To wipe local
 make clean
 ```
 
-The Compose stack does not start an Ollama container. If the backend container should call a host-running Ollama or other OpenAI-compatible server, use a URL reachable from inside Docker, for example `http://host.docker.internal:11434/v1` on Docker Desktop. If no per-agent model environment variables are configured, the backend uses the deterministic fallback path.
+The Compose stack does not start an Ollama container. If the backend container should call a host-running Ollama or other OpenAI-compatible server, use a URL reachable from inside Docker, for example `http://host.docker.internal:11434/v1` on Docker Desktop.
+
+Analysis is intentionally guarded. There is no runtime mock or no-key analysis mode. Set reachable provider/API values and all analysis model variables before calling `POST /cases/{case_id}/analyze`, for example `DOCUMENT_FACT_AGENT_MODEL=vllm:llama3.1`.
 
 ## Manual Local Run Commands
 
@@ -255,17 +258,16 @@ EXTRACTED_DIR=backend/data/extracted
 INDEX_DIR=backend/data/index
 AI_ACT_CORPUS_DIR=backend/data/corpus
 
-# Optional. Leave per-agent model variables empty to use deterministic fallback.
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 VLLM_BASE_URL=http://127.0.0.1:11434/v1
 VLLM_API_KEY=ollama
-DOCUMENT_FACT_AGENT_MODEL=
-AI_SYSTEM_AGENT_MODEL=
-RISK_CLASSIFICATION_AGENT_MODEL=
-OBLIGATIONS_AGENT_MODEL=
-CRITIC_AGENT_MODEL=
-CHAT_AGENT_MODEL=
+DOCUMENT_FACT_AGENT_MODEL=vllm:llama3.1
+AI_SYSTEM_AGENT_MODEL=vllm:llama3.1
+RISK_CLASSIFICATION_AGENT_MODEL=vllm:llama3.1
+OBLIGATIONS_AGENT_MODEL=vllm:llama3.1
+CRITIC_AGENT_MODEL=vllm:llama3.1
+CHAT_AGENT_MODEL=vllm:llama3.1
 EMBEDDING_PROVIDER=local
 
 # Frontend.
@@ -274,4 +276,4 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 For a backend running inside Docker and an Ollama server running on the host, use `VLLM_BASE_URL=http://host.docker.internal:11434/v1` instead of `127.0.0.1`.
 
-Do not fail the demo path only because an external model or embedding service is unavailable. Prefer visible fallback behavior with lower confidence and clear uncertainty.
+If any required analysis model variable is empty, `POST /cases/{case_id}/analyze` returns `llm_not_configured`. If a configured provider call fails, analysis returns `llm_call_failed` instead of silently producing a heuristic report. Follow-up chat similarly requires `CHAT_AGENT_MODEL`.

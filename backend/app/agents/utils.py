@@ -72,21 +72,6 @@ def contains_any(text: str, keywords: Iterable[str]) -> bool:
     return False
 
 
-def first_sentence(text: str, max_length: int = 220) -> str:
-    compact = re.sub(r"\s+", " ", text).strip()
-    if not compact:
-        return ""
-    sentence_match = re.search(r"(.+?[.!?])(?:\s|$)", compact)
-    sentence = sentence_match.group(1) if sentence_match else compact
-    if len(sentence) <= max_length:
-        return sentence
-    return sentence[: max_length - 1].rstrip() + "..."
-
-
-def best_snippet(citations: list[Citation]) -> str:
-    return first_sentence(citations[0].snippet) if citations else ""
-
-
 def dedupe(values: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []

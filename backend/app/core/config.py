@@ -53,7 +53,6 @@ class Settings:
     ai_act_corpus_dir: Path = field(
         default_factory=lambda: _resolve(os.getenv("AI_ACT_CORPUS_DIR", "backend/data/corpus"))
     )
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     vllm_base_url: str = field(
@@ -64,7 +63,7 @@ class Settings:
         default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "local")
     )
     # Per-agent model strings: "provider:model-id" (e.g. "openai:gpt-4o-mini").
-    # Leave empty to use the deterministic heuristic fallback.
+    # Analysis and chat endpoints require these to be configured.
     document_fact_agent_model: str = field(
         default_factory=lambda: os.getenv("DOCUMENT_FACT_AGENT_MODEL", "")
     )

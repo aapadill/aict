@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from app.core.config import settings
@@ -9,8 +8,6 @@ from app.services import llm as llm_service
 from app.storage import JsonRepository, repository
 
 from .utils import add_trace, dedupe, joined_uploaded_text
-
-logger = logging.getLogger(__name__)
 
 CRITICAL_FACT_LABELS = (
     "Purpose",
@@ -63,17 +60,13 @@ class CriticUncertaintyAgent:
     repo: JsonRepository = repository
 
     def run(self, state: AgentState) -> AgentState:
-        # Always run the heuristic first — it handles deterministic structural checks.
-        self._run_heuristic(state)
+        # Always run deterministic structural checks before the LLM critique.
+        self._run_structural_review(state)
 
         model = settings.critic_agent_model
-        if model:
-            try:
-                self._run_llm_critique(state, model)
-            except Exception as exc:
-                logger.warning(
-                    "CriticUncertaintyAgent LLM call failed (%s); heuristic output retained.", exc
-                )
+        if not model:
+            raise RuntimeError("CRITIC_AGENT_MODEL is required.")
+        self._run_llm_critique(state, model)
         return state
 
     # ------------------------------------------------------------------
@@ -136,10 +129,10 @@ class CriticUncertaintyAgent:
         )
 
     # ------------------------------------------------------------------
-    # Heuristic pass (original implementation — always runs)
+    # Deterministic structural review (always runs)
     # ------------------------------------------------------------------
 
-    def _run_heuristic(self, state: AgentState) -> None:
+    def _run_structural_review(self, state: AgentState) -> None:
         missing_labels = [
             fact.label
             for fact in state.facts

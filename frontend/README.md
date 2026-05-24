@@ -24,7 +24,7 @@ npm run dev
 
 Set `VITE_API_BASE_URL` to your FastAPI backend (defaults to `http://localhost:8000`).
 
-If the backend is unreachable, the UI falls back to mock data automatically (a banner is shown).
+If the backend is unreachable, the UI shows an API/network error. There is no frontend mock-data fallback.
 
 Useful checks:
 

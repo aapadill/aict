@@ -427,6 +427,8 @@ def analyze_case(
             raise _api_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message) from exc
         if exc.code == "llm_not_configured":
             raise _api_error(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.code, exc.message) from exc
+        if exc.code == "llm_call_failed":
+            raise _api_error(status.HTTP_502_BAD_GATEWAY, exc.code, exc.message) from exc
         raise _api_error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             exc.code,
@@ -506,6 +508,10 @@ def chat_with_case(
             raise _api_error(status.HTTP_404_NOT_FOUND, exc.code, exc.message) from exc
         if exc.code == "empty_message":
             raise _api_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message) from exc
+        if exc.code == "llm_not_configured":
+            raise _api_error(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.code, exc.message) from exc
+        if exc.code == "llm_call_failed":
+            raise _api_error(status.HTTP_502_BAD_GATEWAY, exc.code, exc.message) from exc
         raise _api_error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             exc.code,
