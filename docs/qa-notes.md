@@ -82,9 +82,9 @@ curl -I -sS http://127.0.0.1:5173/
 
 - Docker image builds require package registry access the first time dependencies are installed.
 - Containerized backend state lives in the `backend-data` Docker volume, not directly in `backend/data/state/`; use `make clean` to wipe demo state.
-- The Compose stack does not start Ollama. A host model server must be reachable from inside the backend container, for example via `host.docker.internal` on Docker Desktop, and the backend must be configured with per-agent model environment variables to avoid deterministic fallback.
+- The Compose stack does not start Ollama. A host model server must be reachable from inside the backend container, for example via `host.docker.internal` on Docker Desktop, and per-agent model environment variables must be configured.
 - Frontend dependency install required npm registry access. In a restricted network, run `npm install` before the demo or keep `node_modules` available locally.
 - The frontend dependency tree intentionally does not include Three.js, React Three Fiber, Playwright, Supabase, auth packages, or a frontend database.
 - The AI Act corpus is curated excerpts/placeholders, not full official corpus ingestion.
-- Analysis is deterministic heuristic decision support, not legal advice.
+- `POST /analyze` is guarded: without all required analysis model variables, it returns `llm_not_configured`. Failed configured model calls return `llm_call_failed`.
 - Browser-level manual testing was limited to confirming the Vite app boots; the full user flow is covered by backend API tests and frontend build validation.

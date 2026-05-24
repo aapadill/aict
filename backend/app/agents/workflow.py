@@ -29,17 +29,19 @@ class AnalysisWorkflowError(Exception):
 
 
 def llm_configured() -> bool:
-    """Return True if at least one agent model is set or mock mode is explicit."""
-    if settings.llm_provider == "mock":
-        return True
-    return any([
-        settings.document_fact_agent_model,
-        settings.ai_system_agent_model,
-        settings.risk_classification_agent_model,
-        settings.obligations_agent_model,
-        settings.critic_agent_model,
-        settings.chat_agent_model,
-    ])
+    """Return True when all analysis agent models are configured."""
+    return not _missing_analysis_models()
+
+
+def _missing_analysis_models() -> list[str]:
+    required = {
+        "DOCUMENT_FACT_AGENT_MODEL": settings.document_fact_agent_model,
+        "AI_SYSTEM_AGENT_MODEL": settings.ai_system_agent_model,
+        "RISK_CLASSIFICATION_AGENT_MODEL": settings.risk_classification_agent_model,
+        "OBLIGATIONS_AGENT_MODEL": settings.obligations_agent_model,
+        "CRITIC_AGENT_MODEL": settings.critic_agent_model,
+    }
+    return [name for name, value in required.items() if not value]
 
 
 def _assert_llm_configured() -> None:
@@ -48,7 +50,8 @@ def _assert_llm_configured() -> None:
     raise AnalysisWorkflowError(
         "llm_not_configured",
         (
-            "No LLM models are configured. "
+            "Required LLM models are not configured. "
+            f"Missing: {', '.join(_missing_analysis_models())}.\n"
             "Set per-agent model variables in your .env file.\n\n"
             "Example using a vLLM server:\n"
             "  VLLM_BASE_URL=http://your-server:8000/v1\n"
@@ -58,9 +61,7 @@ def _assert_llm_configured() -> None:
             "  RISK_CLASSIFICATION_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
             "  OBLIGATIONS_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
             "  CRITIC_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n"
-            "  CHAT_AGENT_MODEL=vllm:meta-llama/Llama-3.3-70B-Instruct\n\n"
-            "See .env.example for Anthropic and OpenAI options.\n"
-            "Set LLM_PROVIDER=mock only for testing with the deterministic fallback."
+            "See .env.example for vLLM/Ollama, Anthropic, and OpenAI options."
         ),
     )
 
@@ -85,14 +86,20 @@ def run_analysis_workflow(
     index_case(case_id, repo=repo)
 
     state = AgentState(case_id=case_id)
-    for agent in (
-        DocumentFactAgent(repo=repo),
-        AISystemDefinitionAgent(repo=repo),
-        RiskClassificationAgent(repo=repo),
-        ObligationsGovernanceAgent(repo=repo),
-        CriticUncertaintyAgent(repo=repo),
-    ):
-        agent.run(state)
+    try:
+        for agent in (
+            DocumentFactAgent(repo=repo),
+            AISystemDefinitionAgent(repo=repo),
+            RiskClassificationAgent(repo=repo),
+            ObligationsGovernanceAgent(repo=repo),
+            CriticUncertaintyAgent(repo=repo),
+        ):
+            agent.run(state)
+    except Exception as exc:
+        raise AnalysisWorkflowError(
+            "llm_call_failed",
+            f"Configured LLM analysis failed: {exc}",
+        ) from exc
 
     draft = assemble_analysis_result(state)
     verified = verify_analysis_citations(draft, repo=repo)

@@ -19,7 +19,7 @@ services:
       # vLLM / self-hosted OpenAI-compatible server
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
-      # Per-agent model strings (provider:model-id). Empty = deterministic fallback.
+      # Per-agent model strings (provider:model-id). Required for analysis/chat.
       DOCUMENT_FACT_AGENT_MODEL: ${DOCUMENT_FACT_AGENT_MODEL:-}
       AI_SYSTEM_AGENT_MODEL: ${AI_SYSTEM_AGENT_MODEL:-}
       RISK_CLASSIFICATION_AGENT_MODEL: ${RISK_CLASSIFICATION_AGENT_MODEL:-}

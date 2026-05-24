@@ -110,7 +110,8 @@ This is a decision-support draft, not final legal advice.
 
 - Keep the MVP single-user and local-first.
 - Prefer the Docker Compose stack for demo validation; use manual commands only when debugging a specific service.
-- Prefer deterministic behavior and visible fallbacks over hidden external dependencies.
+- Analysis requires configured per-agent LLM models. The workflow guard returns `llm_not_configured` when required model variables are missing.
+- Failed provider calls return `llm_call_failed`; the backend should not silently replace a failed model call with a heuristic report.
 - Store enough source metadata to explain every citation in the UI.
 - Make confidence and uncertainty explicit.
 - Avoid production-only features unless the demo path is already complete.

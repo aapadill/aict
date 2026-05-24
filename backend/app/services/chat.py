@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 
@@ -11,8 +10,6 @@ from app.services import llm as llm_service
 from app.services.citation_verifier import verify_citations
 from app.services.retrieval import search_case
 from app.storage import JsonRepository, repository
-
-logger = logging.getLogger(__name__)
 
 _CHAT_NOTICE = "This is decision support, not final legal advice."
 _CORE_CHAT_FACTS = ("Purpose", "Outputs", "Deployment context")
@@ -93,6 +90,12 @@ def answer_follow_up(
             "analysis_not_found",
             "Run an analysis before asking follow-up questions.",
         )
+    model = settings.chat_agent_model
+    if not model:
+        raise ChatWorkflowError(
+            "llm_not_configured",
+            "CHAT_AGENT_MODEL is required before asking follow-up questions.",
+        )
 
     repo.save_message(case_id=case_id, role="user", content=text, citations=[])
 
@@ -119,19 +122,13 @@ def answer_follow_up(
             citations = []
             content = _build_case_gap_answer(analysis=analysis, new_facts=new_facts)
     else:
-        model = settings.chat_agent_model
-        if model:
-            try:
-                content = _build_llm_answer(model, text, analysis, citations)
-            except Exception as exc:
-                logger.warning("Chat LLM call failed (%s); falling back to template answer.", exc)
-                content = _build_template_answer(
-                    question=text, analysis=analysis, citations=citations, new_facts=new_facts
-                )
-        else:
-            content = _build_template_answer(
-                question=text, analysis=analysis, citations=citations, new_facts=new_facts
-            )
+        try:
+            content = _build_llm_answer(model, text, analysis, citations)
+        except Exception as exc:
+            raise ChatWorkflowError(
+                "llm_call_failed",
+                f"Configured chat LLM failed: {exc}",
+            ) from exc
 
     reassessment_recommended = bool(new_facts)
     if reassessment_recommended:
@@ -201,67 +198,6 @@ def _build_llm_answer(
     )
 
     return llm_service.complete(model, _SYSTEM_PROMPT, user_prompt, max_tokens=1500)
-
-
-# ------------------------------------------------------------------
-# Template-based fallback answer (original implementation)
-# ------------------------------------------------------------------
-
-
-def _build_template_answer(
-    question: str,
-    analysis: AnalysisResult,
-    citations: list[Citation],
-    new_facts: list[str],
-) -> str:
-    lower_question = question.lower()
-    parts: list[str] = []
-
-    if _asks_about_risk(lower_question):
-        parts.append(
-            "Based on the saved first-pass assessment, the current risk view is: "
-            f"{analysis.risk_classification.conclusion}"
-        )
-        parts.append(
-            "This should be treated as decision support, not a final legal conclusion."
-        )
-    elif _asks_about_next_steps(lower_question):
-        next_items = analysis.missing_information[:5] or analysis.follow_up_questions[:5]
-        if next_items:
-            parts.append("The next useful evidence to collect is: " + "; ".join(next_items) + ".")
-        else:
-            parts.append(
-                "The saved assessment does not list specific missing evidence, but role allocation, "
-                "intended purpose, oversight, and monitoring should still be confirmed."
-            )
-    elif _asks_about_compliance(lower_question):
-        parts.append(
-            "I would not describe the system as definitely compliant from this record. "
-            "The saved assessment is a first-pass review and still depends on the unresolved facts and obligations."
-        )
-    else:
-        parts.append(
-            "Using the saved assessment and retrieved sources, the most relevant current finding is: "
-            f"{analysis.summary or analysis.risk_classification.conclusion}"
-        )
-
-    if analysis.ai_system_assessment.conclusion:
-        parts.append(f"AI-system scope: {analysis.ai_system_assessment.conclusion}")
-    if analysis.missing_information:
-        parts.append(
-            "Key uncertainty remains: " + "; ".join(analysis.missing_information[:4]) + "."
-        )
-    if citations:
-        source_titles = _dedupe([citation.source_title for citation in citations])
-        parts.append("I found supporting source snippets from: " + "; ".join(source_titles) + ".")
-    else:
-        parts.append(
-            "I did not find a verified source snippet for this exact follow-up, so treat the answer as a cautious interpretation of the saved assessment."
-        )
-    if new_facts:
-        parts.append("New fact-like statements detected: " + "; ".join(new_facts) + ".")
-
-    return "\n\n".join(parts)
 
 
 def _build_case_gap_answer(analysis: AnalysisResult, new_facts: list[str]) -> str:
@@ -466,18 +402,6 @@ def _ensure_chat_notice(content: str) -> str:
     if _CHAT_NOTICE.lower() in content.lower():
         return content
     return f"{content}\n\n{_CHAT_NOTICE}"
-
-
-def _asks_about_risk(text: str) -> bool:
-    return any(term in text for term in ("high-risk", "high risk", "risk class", "classification"))
-
-
-def _asks_about_next_steps(text: str) -> bool:
-    return any(term in text for term in ("collect next", "next", "missing", "what should we collect"))
-
-
-def _asks_about_compliance(text: str) -> bool:
-    return any(term in text for term in ("compliant", "compliance", "legal", "allowed"))
 
 
 def _looks_like_question(sentence: str) -> bool:

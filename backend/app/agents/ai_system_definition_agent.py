@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from app.core.config import settings
@@ -18,8 +17,6 @@ from .utils import (
     joined_uploaded_text,
     retrieve,
 )
-
-logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 You are an EU AI Act compliance analyst assessing whether a described use case involves an AI system.
@@ -67,7 +64,6 @@ Return ONLY this JSON:
 }\
 """
 
-AI_SYSTEM_SIGNAL_FACT_LABELS = ("Purpose", "Outputs", "Automation level", "Use of GPAI/LLM")
 AI_SYSTEM_SIGNAL_KEYWORDS = (
     "AI",
     "machine learning",
@@ -97,14 +93,9 @@ class AISystemDefinitionAgent:
             return self._run_unclear_guardrail(state, missing_evidence)
 
         model = settings.ai_system_agent_model
-        if model:
-            try:
-                return self._run_llm(state, model)
-            except Exception as exc:
-                logger.warning(
-                    "AISystemDefinitionAgent LLM call failed (%s); falling back to heuristic.", exc
-                )
-        return self._run_heuristic(state)
+        if not model:
+            raise RuntimeError("AI_SYSTEM_AGENT_MODEL is required.")
+        return self._run_llm(state, model)
 
     # ------------------------------------------------------------------
     # LLM path
@@ -175,83 +166,6 @@ class AISystemDefinitionAgent:
             "AISystemDefinitionAgent",
             "assess_ai_system_definition",
             f"Assessed AI-system scope after guardrails: {state.ai_system_assessment.conclusion[:120]}",
-        )
-        return state
-
-    # ------------------------------------------------------------------
-    # Heuristic fallback (original implementation)
-    # ------------------------------------------------------------------
-
-    def _run_heuristic(self, state: AgentState) -> AgentState:
-        uploaded_text = joined_uploaded_text(state, repo=self.repo)
-        ai_signals = contains_any(
-            uploaded_text,
-            AI_SYSTEM_SIGNAL_KEYWORDS,
-        )
-
-        if ai_signals:
-            regulatory_citations = retrieve(
-                state,
-                "AI system machine-based autonomy adaptiveness predictions recommendations decisions Article 3",
-                source_types=["legislation", "official_guidance"],
-                limit=3,
-                repo=self.repo,
-            )
-            fact_citations = retrieve(
-                state,
-                "automated predictions recommendations decisions outputs AI system",
-                source_types=["uploaded_document"],
-                limit=2,
-                repo=self.repo,
-            )
-            citations = [*fact_citations, *regulatory_citations]
-            conclusion = "The uploaded material appears to describe an AI system for first-pass AI Act analysis."
-            confidence = "medium" if citations else "low"
-            reasoning = (
-                "The use case contains signals of automated inference or model-based outputs, "
-                "and retrieved AI Act reference material describes AI systems in terms of machine-based "
-                "systems producing predictions, content, recommendations, or decisions."
-            )
-            uncertainties = ["Confirm the exact technical architecture and level of autonomy."]
-        else:
-            state.ai_system_assessment = _unclear_definition_section(
-                [
-                    "Uploaded documents do not establish AI-system technical facts such as model use, automation, inference, or outputs.",
-                    "Legal corpus definitions were not cited because they do not describe the uploaded use case.",
-                ]
-            )
-            add_trace(
-                state,
-                "AISystemDefinitionAgent",
-                "assess_ai_system_definition",
-                "Guardrail forced unclear AI-system assessment: no uploaded AI-system signal.",
-            )
-            return state
-
-        section = AssessmentSection(
-            title="AI-system definition assessment",
-            conclusion=conclusion,
-            confidence=confidence,
-            reasoning=reasoning,
-            citations=citations,
-            assumptions=["Assessment is based only on uploaded documents and built-in AI Act corpus."],
-            uncertainties=dedupe(uncertainties),
-        )
-        state.ai_system_assessment = self._apply_definition_guardrails(
-            state,
-            section,
-            use_case_citations=[
-                citation for citation in section.citations if citation.source_type == "uploaded_document"
-            ],
-            legal_citations=[
-                citation for citation in section.citations if citation.source_type != "uploaded_document"
-            ],
-        )
-        add_trace(
-            state,
-            "AISystemDefinitionAgent",
-            "assess_ai_system_definition",
-            f"AI-system signals found; conclusion after guardrails: {state.ai_system_assessment.conclusion}",
         )
         return state
 
