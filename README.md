@@ -18,6 +18,7 @@ In scope for the demo:
 - Curated EU AI Act reference excerpts bundled with the backend.
 - Multi-agent first-pass analysis with named agent trace.
 - Deterministic citation verification before results are saved or shown.
+- Report timeline/history for saved assessments, with one active report at a time.
 - Follow-up chat that uses the saved analysis, uploaded documents, and AI Act references.
 
 Out of scope unless time remains:
@@ -43,6 +44,12 @@ The MVP should run on a developer laptop with no required cloud services.
 
 The `chunks` store is the source of truth for citations. Agents may interpret retrieved evidence, but every returned citation must point to a stored chunk and pass a deterministic verifier.
 
+Dependency source of truth:
+
+- Backend dependencies live in `backend/pyproject.toml`: FastAPI, Uvicorn, python-dotenv, Pydantic, pypdf, python-multipart, httpx, OpenAI, Anthropic, and pytest for dev.
+- Frontend dependencies live in `frontend/package.json`: React, React DOM, Vite, TypeScript, lucide-react, class-variance-authority, clsx, and tailwind-merge.
+- The current frontend does not require Three.js, React Three Fiber, Playwright, Supabase, or auth libraries.
+
 ## Frontend and Backend Split
 
 The backend owns:
@@ -56,13 +63,14 @@ The backend owns:
 
 The frontend owns:
 
-- Case creation form.
-- Multi-document upload UI and document status display.
+- Cases board and blank case creation.
+- Use-case description editing before analysis.
+- Multi-document upload UI, delete controls, lock/unlock affordances, and document status display.
 - Analysis trigger and loading states.
-- Cited assessment report view.
-- Follow-up chat view.
-- Agent trace and uncertainty display.
-- Copy/export affordances if time allows.
+- Cited assessment report view with collapsible sections.
+- Report timeline/history controls for jumping between saved snapshots.
+- Follow-up chat view after an active analysis exists.
+- Agent trace, uncertainty display, copy, and Markdown export.
 
 The frontend should call the backend through JSON APIs only. It should not run document parsing, retrieval, agent logic, or citation verification in the browser.
 
@@ -103,6 +111,8 @@ backend/data/
 ├── state/
 │   ├── cases.json
 │   ├── documents.json
+│   ├── active_analyses/
+│   │   └── {case_id}.json
 │   ├── chunks/
 │   │   └── {case_id}.json
 │   ├── analyses/
@@ -120,6 +130,8 @@ backend/data/
 ```
 
 Use atomic writes for JSON updates: write to a temp file in the same directory, then replace the target file. The citation verifier should resolve citations to stored chunk IDs and validate snippets against the stored chunk text.
+
+`analyses/{case_id}.json` stores the report history for a case. `active_analyses/{case_id}.json` stores the currently active analysis ID, or `null` when the case has been unlocked for document changes. Unlocking clears active chunks, evidence, messages, and search indexes, but keeps saved report snapshots in the timeline.
 
 ## Docker Run Commands
 
