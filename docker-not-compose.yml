@@ -1,0 +1,49 @@
+services:
+  llama:
+    image: vllm/vllm-openai:latest
+
+    container_name: llama-70b
+
+    restart: unless-stopped
+
+    network_mode: host
+
+    environment:
+      # Hugging Face access token (REQUIRED for gated Llama models)
+      HUGGING_FACE_HUB_TOKEN: ""
+
+      # Some transformers versions require both
+      HF_TOKEN: ""
+
+      # API key for external access
+      VLLM_API_KEY: ""
+
+      # CUDA memory tuning
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+    volumes:
+      - ./hf-cache:/root/.cache/huggingface
+
+    ipc: host
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # IMPORTANT: remove env interpolation entirely, hardcode API key here too
+    command: >
+      --model meta-llama/Llama-3.3-70B-Instruct
+      --host 0.0.0.0
+      --port 8000
+      --api-key super-secret-api-key
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.95
+      --max-model-len 32768
+      --dtype bfloat16
+      --trust-remote-code
+      --enable-prefix-caching
+      --max-num-seqs 32

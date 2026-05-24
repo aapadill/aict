@@ -2,7 +2,7 @@
 
 BACKEND_PORT ?= 8001
 FRONTEND_PORT ?= 5173
-VITE_API_BASE_URL ?= http://localhost:$(BACKEND_PORT)
+VITE_API_BASE_URL ?= http://95.133.252.22:$(BACKEND_PORT)
 CORS_ORIGINS ?= http://localhost:$(FRONTEND_PORT),http://127.0.0.1:$(FRONTEND_PORT)
 
 help:
@@ -43,7 +43,7 @@ ps:
 	docker compose ps
 
 health:
-	curl -sS http://127.0.0.1:$(BACKEND_PORT)/health
+	curl -sS http://0.0.0.0:$(BACKEND_PORT)/health
 
 test-backend:
 	docker compose run --rm backend python -m pytest
