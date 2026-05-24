@@ -1,5 +1,6 @@
 import type {
   AnalysisResult,
+  AnalysisRevision,
   Case,
   ChatMessage,
   ChatResponse,
@@ -101,6 +102,11 @@ const mockState = {
   cases: [...mockCases] as Case[],
   docs: JSON.parse(JSON.stringify(mockDocuments)) as Record<string, DocumentRecord[]>,
   analysis: {} as Record<string, AnalysisResult>,
+  activeAnalysisId: {} as Record<string, string | undefined>,
+  analysisHistory: {} as Record<
+    string,
+    Array<AnalysisRevision & { result: AnalysisResult }>
+  >,
   msgs: { ...mockMessages } as Record<string, ChatMessage[]>,
 };
 
@@ -161,6 +167,21 @@ export function deleteCase(caseId: string): Promise<void> {
       mockState.cases.splice(index, 1);
       delete mockState.docs[caseId];
       delete mockState.analysis[caseId];
+      delete mockState.activeAnalysisId[caseId];
+      delete mockState.analysisHistory[caseId];
+      delete mockState.msgs[caseId];
+    }
+  );
+}
+
+export function unlockCaseAnalysis(caseId: string): Promise<void> {
+  return withFallback(
+    () => request<void>(`/cases/${caseId}/analysis`, { method: "DELETE" }),
+    () => {
+      const exists = mockState.cases.some((x) => x.id === caseId);
+      if (!exists) throw new ApiError("Case not found", 404);
+      delete mockState.analysis[caseId];
+      delete mockState.activeAnalysisId[caseId];
       delete mockState.msgs[caseId];
     }
   );
@@ -209,6 +230,21 @@ export function uploadDocuments(caseId: string, files: File[]): Promise<Document
   );
 }
 
+export function deleteDocument(caseId: string, documentId: string): Promise<void> {
+  return withFallback(
+    () => request<void>(`/cases/${caseId}/documents/${documentId}`, { method: "DELETE" }),
+    () => {
+      if (mockState.analysis[caseId]) {
+        throw new ApiError("Unlock the case before removing documents", 409);
+      }
+      const docs = mockState.docs[caseId] ?? [];
+      const nextDocs = docs.filter((doc) => doc.id !== documentId);
+      if (nextDocs.length === docs.length) throw new ApiError("Document not found", 404);
+      mockState.docs[caseId] = nextDocs;
+    }
+  );
+}
+
 export function listDocuments(caseId: string): Promise<DocumentRecord[]> {
   return withFallback(
     () => request<DocumentRecord[]>(`/cases/${caseId}/documents`),
@@ -222,7 +258,28 @@ export function runAnalysis(caseId: string): Promise<AnalysisResult> {
     async () => {
       await new Promise((r) => setTimeout(r, 600));
       const a = mockAnalysis(caseId);
+      const id = uid("analysis");
       mockState.analysis[caseId] = a;
+      mockState.activeAnalysisId[caseId] = id;
+      const existing = mockState.analysisHistory[caseId] ?? [];
+      const revision: AnalysisRevision & { result: AnalysisResult } = {
+        id,
+        case_id: caseId,
+        status: "complete",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        revision: existing.length + 1,
+        active: true,
+        summary: a.summary,
+        risk_label: riskLabel(a.risk_classification.conclusion),
+        risk_conclusion: a.risk_classification.conclusion,
+        confidence: a.risk_classification.confidence,
+        result: a,
+      };
+      mockState.analysisHistory[caseId] = [
+        ...existing.map((item) => ({ ...item, active: false })),
+        revision,
+      ];
       return a;
     }
   );
@@ -232,6 +289,29 @@ export function getAnalysis(caseId: string): Promise<AnalysisResult | null> {
   return withFallback(
     () => request<AnalysisResult | null>(`/cases/${caseId}/analysis`),
     () => mockState.analysis[caseId] ?? null
+  );
+}
+
+export function listAnalysisRevisions(caseId: string): Promise<AnalysisRevision[]> {
+  return withFallback(
+    () => request<AnalysisRevision[]>(`/cases/${caseId}/analyses`),
+    () => (mockState.analysisHistory[caseId] ?? []).map(({ result: _result, ...item }) => item)
+  );
+}
+
+export function getAnalysisRevision(
+  caseId: string,
+  analysisId: string,
+): Promise<AnalysisResult> {
+  return withFallback(
+    () => request<AnalysisResult>(`/cases/${caseId}/analyses/${analysisId}`),
+    () => {
+      const revision = (mockState.analysisHistory[caseId] ?? []).find(
+        (item) => item.id === analysisId,
+      );
+      if (!revision) throw new ApiError("Analysis revision not found", 404);
+      return revision.result;
+    }
   );
 }
 
@@ -286,6 +366,15 @@ export function sendChatMessage(caseId: string, message: string): Promise<ChatRe
       return response;
     }
   );
+}
+
+function riskLabel(conclusion: string): string {
+  const text = conclusion.toLowerCase();
+  if (text.includes("prohibited")) return "Prohibited";
+  if (text.includes("high-risk") || text.includes("high risk")) return "High risk";
+  if (text.includes("limited") || text.includes("transparency")) return "Limited risk";
+  if (text.includes("minimal") || text.includes("low")) return "Low risk";
+  return "Needs review";
 }
 
 export { API_BASE_URL };

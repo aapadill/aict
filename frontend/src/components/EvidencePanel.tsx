@@ -27,7 +27,13 @@ export function CitationItem({ c }: { c: Citation }) {
   );
 }
 
-export default function EvidencePanel({ citations }: { citations: Citation[] }) {
+export default function EvidencePanel({
+  citations,
+  compact = false,
+}: {
+  citations: Citation[];
+  compact?: boolean;
+}) {
   if (!citations.length) {
     return (
       <EmptyState
@@ -43,7 +49,7 @@ export default function EvidencePanel({ citations }: { citations: Citation[] }) 
   })).filter((g) => g.items.length > 0);
 
   return (
-    <div>
+    <div className={compact ? "evidence-compact" : ""}>
       {grouped.map((g) => (
         <div key={g.type} className="cite-group">
           <h3>{g.label} ({g.items.length})</h3>

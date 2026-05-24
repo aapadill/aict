@@ -145,7 +145,8 @@ def latest_analysis_result(
     analysis = repo.get_latest_analysis(case_id)
     if analysis is None:
         return None
-    return AnalysisResult.model_validate(analysis.result)
+    result = AnalysisResult.model_validate(analysis.result)
+    return result.model_copy(update={"limitation_notice": LIMITATION_NOTICE})
 
 
 def _normalize_top_level_citations(result: AnalysisResult) -> AnalysisResult:

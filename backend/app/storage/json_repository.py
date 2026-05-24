@@ -145,6 +145,7 @@ class JsonRepository:
         self.index_dir = Path(index_dir) if index_dir is not None else self.data_dir / "index"
         self.chunks_dir = self.state_dir / "chunks"
         self.analyses_dir = self.state_dir / "analyses"
+        self.active_analyses_dir = self.state_dir / "active_analyses"
         self.messages_dir = self.state_dir / "messages"
         self.evidence_dir = self.state_dir / "evidence"
         self.cases_path = self.state_dir / "cases.json"
@@ -156,6 +157,7 @@ class JsonRepository:
             self.state_dir,
             self.chunks_dir,
             self.analyses_dir,
+            self.active_analyses_dir,
             self.messages_dir,
             self.evidence_dir,
             self.upload_dir,
@@ -241,6 +243,7 @@ class JsonRepository:
             for directory in (
                 self.chunks_dir,
                 self.analyses_dir,
+                self.active_analyses_dir,
                 self.messages_dir,
                 self.evidence_dir,
             ):
@@ -254,6 +257,28 @@ class JsonRepository:
                 shutil.rmtree(directory / safe_case_id, ignore_errors=True)
 
             return True
+
+    def clear_analysis_state(self, case_id: str) -> bool:
+        safe_case_id = _safe_case_id(case_id)
+        if self.get_case(case_id) is None:
+            return False
+
+        with self._lock:
+            for directory in (
+                self.chunks_dir,
+                self.messages_dir,
+                self.evidence_dir,
+            ):
+                state_path = directory / f"{safe_case_id}.json"
+                try:
+                    state_path.unlink()
+                except FileNotFoundError:
+                    pass
+            shutil.rmtree(self.index_dir / safe_case_id, ignore_errors=True)
+            self._write_active_analysis_id(case_id, None)
+
+        self.update_case(case_id)
+        return True
 
     def save_document(
         self,
@@ -303,6 +328,30 @@ class JsonRepository:
                 ),
                 None,
             )
+
+    def delete_document(self, case_id: str, document_id: str) -> bool:
+        _safe_case_id(case_id)
+        with self._lock:
+            documents = self._read_models(self.documents_path, Document)
+            target = next(
+                (
+                    document
+                    for document in documents
+                    if document.caseid == case_id and document.id == document_id
+                ),
+                None,
+            )
+            if target is None:
+                return False
+            self._write_models(
+                self.documents_path,
+                [document for document in documents if document.id != document_id],
+            )
+
+        self._unlink_managed_file(target.filepath, (self.upload_dir / case_id,))
+        self._unlink_managed_file(target.extractedtextpath, (self.extracted_dir / case_id,))
+        self.clear_analysis_state(case_id)
+        return True
 
     def update_document_status(
         self,
@@ -389,13 +438,40 @@ class JsonRepository:
             analyses = self._read_models(self._case_list_path(self.analyses_dir, case_id), Analysis)
             analyses.append(analysis)
             self._write_models(self._case_list_path(self.analyses_dir, case_id), analyses)
+            self._write_active_analysis_id(case_id, analysis.id)
         return analysis
 
-    def get_latest_analysis(self, case_id: str) -> Analysis | None:
+    def list_analyses(self, case_id: str) -> list[Analysis]:
         analyses = self._read_models(self._case_list_path(self.analyses_dir, case_id), Analysis)
+        return sorted(analyses, key=lambda analysis: analysis.createdat)
+
+    def get_analysis(self, case_id: str, analysis_id: str) -> Analysis | None:
+        return next(
+            (
+                analysis
+                for analysis in self.list_analyses(case_id)
+                if analysis.id == analysis_id and analysis.caseid == case_id
+            ),
+            None,
+        )
+
+    def get_latest_analysis(self, case_id: str) -> Analysis | None:
+        analyses = self.list_analyses(case_id)
         if not analyses:
             return None
+        active_exists, active_id = self._read_active_analysis_id(case_id)
+        if active_exists:
+            if active_id is None:
+                return None
+            return self.get_analysis(case_id, active_id)
         return max(analyses, key=lambda analysis: analysis.createdat)
+
+    def get_active_analysis_id(self, case_id: str) -> str | None:
+        active_exists, active_id = self._read_active_analysis_id(case_id)
+        if active_exists:
+            return active_id
+        latest = self.get_latest_analysis(case_id)
+        return latest.id if latest is not None else None
 
     def save_message(
         self, case_id: str, role: str, content: str, citations: list[dict[str, Any]]
@@ -448,9 +524,51 @@ class JsonRepository:
         with self._lock:
             return self._read_models(self._case_list_path(self.evidence_dir, case_id), Evidence)
 
+    def _unlink_managed_file(self, path_value: str | None, roots: tuple[Path, ...]) -> None:
+        if not path_value:
+            return
+        path = Path(path_value)
+        resolved_path = path.resolve(strict=False)
+        allowed = False
+        for root in roots:
+            resolved_root = root.resolve(strict=False)
+            if resolved_path == resolved_root or resolved_root in resolved_path.parents:
+                allowed = True
+                break
+        if not allowed:
+            return
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
     def _case_list_path(self, directory: Path, case_id: str) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
         return directory / f"{_safe_case_id(case_id)}.json"
+
+    def _active_analysis_path(self, case_id: str) -> Path:
+        self.active_analyses_dir.mkdir(parents=True, exist_ok=True)
+        return self.active_analyses_dir / f"{_safe_case_id(case_id)}.json"
+
+    def _write_active_analysis_id(self, case_id: str, analysis_id: str | None) -> None:
+        self._write_json(
+            self._active_analysis_path(case_id),
+            {
+                "analysis_id": analysis_id,
+                "updated_at": _now(),
+            },
+        )
+
+    def _read_active_analysis_id(self, case_id: str) -> tuple[bool, str | None]:
+        path = self._active_analysis_path(case_id)
+        if not path.exists():
+            return False, None
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+        if not isinstance(data, dict):
+            return True, None
+        analysis_id = data.get("analysis_id")
+        return True, str(analysis_id) if analysis_id else None
 
     def _read_models(self, path: Path, model_type: type[T]) -> list[T]:
         return [_model_from_dict(model_type, item) for item in self._read_list(path)]
@@ -525,6 +643,10 @@ def delete_case(case_id: str) -> bool:
     return repository.delete_case(case_id)
 
 
+def clear_analysis_state(case_id: str) -> bool:
+    return repository.clear_analysis_state(case_id)
+
+
 def save_document(
     case_id: str,
     filename: str,
@@ -553,6 +675,10 @@ def get_document(document_id: str) -> Document | None:
     return repository.get_document(document_id)
 
 
+def delete_document(case_id: str, document_id: str) -> bool:
+    return repository.delete_document(case_id, document_id)
+
+
 def update_document_status(
     document_id: str,
     status: str,
@@ -577,8 +703,20 @@ def save_analysis(case_id: str, result: dict[str, Any], status: str = "complete"
     return repository.save_analysis(case_id, result, status)
 
 
+def list_analyses(case_id: str) -> list[Analysis]:
+    return repository.list_analyses(case_id)
+
+
+def get_analysis(case_id: str, analysis_id: str) -> Analysis | None:
+    return repository.get_analysis(case_id, analysis_id)
+
+
 def get_latest_analysis(case_id: str) -> Analysis | None:
     return repository.get_latest_analysis(case_id)
+
+
+def get_active_analysis_id(case_id: str) -> str | None:
+    return repository.get_active_analysis_id(case_id)
 
 
 def save_message(

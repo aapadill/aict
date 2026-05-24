@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { ArrowRight, Files, Home, LayoutDashboard, Moon, Scale, ShieldCheck, Sun } from "lucide-react";
 import CaseDashboard from "./components/CaseDashboard";
 import CaseWorkspace from "./components/CaseWorkspace";
+import StackedLogo from "./components/StackedLogo";
 
 type Theme = "light" | "dark";
 type Page = "home" | "board";
@@ -39,7 +41,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand-block brand-button" onClick={openHome} type="button">
-          <div className="brand-mark">§</div>
+          <div className="brand-mark"><StackedLogo size={18} /></div>
           <div>
             <h1>aict</h1>
             <span className="crumbs">
@@ -58,14 +60,14 @@ export default function App() {
               type="button"
               onClick={openHome}
             >
-              Home
+              <Home size={14} /> Home
             </button>
             <button
               className={page === "board" || openCaseId ? "active" : ""}
               type="button"
               onClick={openBoard}
             >
-              Board
+              <LayoutDashboard size={14} /> Board
             </button>
           </nav>
           <button
@@ -75,13 +77,10 @@ export default function App() {
             aria-label={`Switch to ${theme === "dark" ? "white" : "dark"} mode`}
             title={`Switch to ${theme === "dark" ? "white" : "dark"} mode`}
           >
-            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
       </header>
-      <div className="limitation">
-        This is a decision-support draft, not final legal advice.
-      </div>
       <main className="main">
         {openCaseId ? (
           <CaseWorkspace caseId={openCaseId} onBack={openBoard} />
@@ -99,7 +98,7 @@ function HomeLanding({ onOpenBoard }: { onOpenBoard: () => void }) {
   return (
     <div className="landing">
       <section className="landing-hero">
-        <div>
+        <div className="landing-copy">
           <div className="eyebrow">EU AI Act compliance assistant</div>
           <h2>aict helps teams turn AI use-case documents into a grounded first-pass review.</h2>
           <p>
@@ -109,33 +108,61 @@ function HomeLanding({ onOpenBoard }: { onOpenBoard: () => void }) {
           </p>
           <div className="landing-actions">
             <button className="primary" onClick={onOpenBoard} type="button">
-              Open cases board
+              Open cases board <ArrowRight size={15} />
             </button>
           </div>
         </div>
-        <div className="landing-panel">
-          <h3>Built for review sessions</h3>
-          <ul>
-            <li>Collect the use-case description and uploaded evidence.</li>
-            <li>Run a cited first-pass AI Act assessment.</li>
-            <li>Track missing facts, uncertainties, and follow-up questions.</li>
-            <li>Continue in chat without losing source grounding.</li>
-          </ul>
+
+        <div className="landing-product" aria-label="aict workflow preview">
+          <div className="product-sidebar">
+            <div className="product-logo"><StackedLogo size={14} /> aict</div>
+            {[
+              ["Review", "active"],
+              ["Sources", ""],
+              ["Report", ""],
+              ["Chat", ""],
+            ].map(([label, active]) => (
+              <div key={label} className={`product-nav ${active}`}>{label}</div>
+            ))}
+          </div>
+          <div className="product-main">
+            <div className="product-toolbar">
+              <span>Assessment queue</span>
+              <span className="product-pill">Draft</span>
+            </div>
+            {[
+              ["Purpose", "found", "Candidate screening and ranking"],
+              ["Risk", "high", "Employment signal detected"],
+              ["Evidence", "found", "12 verified citations"],
+              ["Open facts", "medium", "Provider role, validation, monitoring"],
+            ].map(([label, tone, text]) => (
+              <div key={label} className="product-row">
+                <span className={`product-dot ${tone}`} />
+                <div>
+                  <strong>{label}</strong>
+                  <p>{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="landing-strip">
         <div>
+          <Files size={18} />
           <strong>Document grounded</strong>
           <span>Findings are linked to uploaded files and local reference chunks.</span>
         </div>
         <div>
-          <strong>Hackathon simple</strong>
-          <span>Local JSON storage, lightweight retrieval, and clear reports.</span>
-        </div>
-        <div>
+          <Scale size={18} />
           <strong>Decision support</strong>
           <span>Designed to surface questions, not replace legal review.</span>
+        </div>
+        <div>
+          <ShieldCheck size={18} />
+          <strong>Citation checked</strong>
+          <span>Generated citations are verified against stored chunks before display.</span>
         </div>
       </section>
     </div>

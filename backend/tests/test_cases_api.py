@@ -90,6 +90,7 @@ def test_delete_case_removes_case_documents_and_local_state(
     assert response.status_code == 204
     assert repo.get_case(case_id) is None
     assert repo.list_documents(case_id) == []
+    assert repo.list_analyses(case_id) == []
     assert repo.get_latest_analysis(case_id) is None
     assert repo.list_messages(case_id) == []
     assert not uploaded_file.exists()
@@ -214,6 +215,18 @@ def test_analyze_case_and_get_latest_analysis(
     assert latest_response.status_code == 200
     assert latest_response.json() == result
 
+    revisions_response = client.get(f"/cases/{case_id}/analyses")
+    assert revisions_response.status_code == 200
+    revisions = revisions_response.json()
+    assert len(revisions) == 1
+    assert revisions[0]["active"] is True
+    assert revisions[0]["revision"] == 1
+    assert revisions[0]["risk_label"]
+
+    revision_response = client.get(f"/cases/{case_id}/analyses/{revisions[0]['id']}")
+    assert revision_response.status_code == 200
+    assert revision_response.json() == result
+
 
 def test_uploads_are_locked_after_analysis(
     client_and_repo: tuple[TestClient, JsonRepository],
@@ -229,6 +242,66 @@ def test_uploads_are_locked_after_analysis(
     assert response.status_code == 409
     assert response.json()["detail"]["error"] == "case_locked"
     assert len(repo.list_documents(case_id)) == 1
+
+
+def test_unlock_analysis_allows_uploads_and_keeps_existing_documents(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = _create_analyzed_case(client)
+    original_documents = repo.list_documents(case_id)
+    repo.save_message(case_id=case_id, role="user", content="hello", citations=[])
+
+    response = client.delete(f"/cases/{case_id}/analysis")
+
+    assert response.status_code == 204
+    assert repo.get_latest_analysis(case_id) is None
+    assert len(repo.list_analyses(case_id)) == 1
+    assert repo.list_messages(case_id) == []
+    assert repo.list_documents(case_id) == original_documents
+
+    revisions_response = client.get(f"/cases/{case_id}/analyses")
+    assert revisions_response.status_code == 200
+    revisions = revisions_response.json()
+    assert len(revisions) == 1
+    assert revisions[0]["active"] is False
+
+    upload_response = client.post(
+        f"/cases/{case_id}/documents",
+        files=[("files", ("late.txt", b"New facts after analysis.", "text/plain"))],
+    )
+
+    assert upload_response.status_code == 201
+    assert len(repo.list_documents(case_id)) == 2
+
+    analyze_response = client.post(f"/cases/{case_id}/analyze")
+    assert analyze_response.status_code == 200
+    refreshed_revisions = client.get(f"/cases/{case_id}/analyses").json()
+    assert [revision["revision"] for revision in refreshed_revisions] == [1, 2]
+    assert [revision["active"] for revision in refreshed_revisions] == [False, True]
+
+
+def test_delete_document_requires_unlocked_case_and_removes_file(
+    client_and_repo: tuple[TestClient, JsonRepository],
+) -> None:
+    client, repo = client_and_repo
+    case_id = _create_analyzed_case(client)
+    document = repo.list_documents(case_id)[0]
+    uploaded_file = Path(document.filepath)
+
+    locked_response = client.delete(f"/cases/{case_id}/documents/{document.id}")
+
+    assert locked_response.status_code == 409
+    assert locked_response.json()["detail"]["error"] == "case_locked"
+    assert uploaded_file.exists()
+
+    unlock_response = client.delete(f"/cases/{case_id}/analysis")
+    delete_response = client.delete(f"/cases/{case_id}/documents/{document.id}")
+
+    assert unlock_response.status_code == 204
+    assert delete_response.status_code == 204
+    assert repo.list_documents(case_id) == []
+    assert not uploaded_file.exists()
 
 
 def test_description_is_locked_after_analysis_but_title_can_update(

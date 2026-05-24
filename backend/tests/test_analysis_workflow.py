@@ -29,7 +29,7 @@ def test_run_analysis_workflow_saves_schema_valid_result(tmp_path: Path) -> None
         "CriticUncertaintyAgent",
     ]
     assert result.follow_up_questions
-    assert result.limitation_notice == "This is a decision-support draft, not final legal advice."
+    assert result.limitation_notice == ""
     assert result.citations
     assert all(citation.verified is True for citation in result.citations)
 

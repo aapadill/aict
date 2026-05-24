@@ -75,6 +75,20 @@ export type AnalysisResult = {
   limitation_notice: string;
 };
 
+export type AnalysisRevision = {
+  id: string;
+  case_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+  active: boolean;
+  summary: string;
+  risk_label: string;
+  risk_conclusion: string;
+  confidence: string;
+};
+
 export type ChatMessage = {
   id: string;
   case_id: string;

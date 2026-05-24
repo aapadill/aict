@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-LIMITATION_NOTICE = "This is a decision-support draft, not final legal advice."
+LIMITATION_NOTICE = ""
 
 SourceType = Literal[
     "uploaded_document",
