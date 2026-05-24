@@ -46,14 +46,17 @@ Open `http://127.0.0.1:5173`.
 
 If using `make up-alt`, open `http://127.0.0.1:5174` instead.
 
-### Step 4 - Create a new case
+### Step 4 - Create a new case and save the use-case description
 
-Use:
+Open the cases board and click `New case`. The app creates a blank local review and opens the case workspace.
+
+In `Use-case description`, paste and save:
 
 ```text
-Title: AI recruiting assistant for EU hiring
-Description: An HR team wants to use an AI tool to summarize CVs, score applicants, and rank candidates for recruiter review across EU hiring processes.
+An HR team wants to use an AI tool to summarize CVs, score applicants, and rank candidates for recruiter review across EU hiring processes.
 ```
+
+The case title is assigned from the generated assessment after analysis.
 
 ### Step 5 - Upload the three supporting documents
 
@@ -78,6 +81,7 @@ Wait for the report page to load. The expected report should include:
 - Citations with source snippets.
 - Agent trace.
 - The required limitation notice.
+- A report timeline entry for the active saved assessment.
 
 ### Step 7 - Open at least two citations
 
@@ -86,6 +90,10 @@ Show that citations identify whether evidence came from an uploaded document or 
 ### Step 8 - Review uncertainty
 
 Show one missing-information item, such as incomplete evidence for bias testing, provider/deployer responsibility, validation data, or human oversight. Explain that the app separates cited evidence from assumptions.
+
+### Step 8A - Show report history behavior
+
+Click the locked document control and explain that unlocking a case clears the active report/chat state so files can be changed, but keeps older generated reports in the report timeline as read-only snapshots. Cancel the unlock unless you want to demonstrate rerunning the analysis.
 
 ### Step 9 - Ask a follow-up question in chat
 
@@ -111,10 +119,11 @@ Expected answer: no. Human review may be relevant, but the assistant should avoi
 
 - MVP scope is intentionally small: one local case, multiple documents, one cited first-pass assessment, and follow-up chat.
 - The backend is the authority for parsing, retrieval, agents, persistence, and citation verification.
-- The frontend is a thin demo UI that renders case state, report sections, citations, agent trace, and chat.
+- The frontend is a thin demo UI that renders case state, report sections, citation evidence, report history, agent trace, and chat.
 - Docker Compose is the default demo runtime: backend, frontend, CORS, ports, and persistent demo volume are started together.
 - Agents have named roles so the audience can see how facts, legal references, classification, obligations, and critique are separated.
 - Citations are not free-form model text. They must come from stored source chunks and pass deterministic verification.
+- Historical reports are saved as snapshots. The active report controls whether files are locked and whether chat is enabled.
 - Uncertainty is a product feature. The app should say what is missing instead of pretending to produce final legal advice.
 - The output is always decision support: "This is a decision-support draft, not final legal advice."
 

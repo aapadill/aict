@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { MessageSquare, Send, RefreshCw } from "lucide-react";
 import { getMessages, sendChatMessage } from "../api/client";
 import type { ChatMessage, ChatResponse } from "../types/api";
 import EmptyState from "./EmptyState";
@@ -85,7 +86,7 @@ export default function ChatPanel({
     <div className="panel chat-panel">
       <div className="section-head">
         <div>
-          <h2>Follow-up chat</h2>
+          <h2><MessageSquare size={15} /> Follow-up chat</h2>
           <p>{messages?.length ?? 0} message{(messages?.length ?? 0) === 1 ? "" : "s"}</p>
         </div>
       </div>
@@ -132,7 +133,7 @@ export default function ChatPanel({
                 loadingText="Analyzing…"
                 onClick={runReassessment}
               >
-                Update report
+                <RefreshCw size={14} /> Update report
               </LoadingButton>
             </div>
           )}
@@ -158,7 +159,7 @@ export default function ChatPanel({
           onClick={send}
           disabled={!canSend}
         >
-          Send
+          <Send size={14} /> Send
         </LoadingButton>
       </div>
       <div className="small muted" style={{ marginTop: 4 }}>Tip: ⌘/Ctrl+Enter to send.</div>

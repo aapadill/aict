@@ -28,8 +28,6 @@ export function buildMarkdownReport(a: AnalysisResult, caseTitle?: string): stri
   const lines: string[] = [];
   lines.push(`# AI Act Assessment — ${caseTitle ?? a.case_id}`);
   lines.push(``);
-  lines.push(`> ${a.limitation_notice}`);
-  lines.push(``);
   lines.push(`## Use-case summary`);
   lines.push(a.summary);
   lines.push(``);
@@ -83,10 +81,6 @@ export function buildMarkdownReport(a: AnalysisResult, caseTitle?: string): stri
   a.agent_trace.forEach((e) =>
     lines.push(`- **${e.agent}** — _${e.action}_: ${e.output_summary}`)
   );
-  lines.push(``);
-
-  lines.push(`---`);
-  lines.push(`> ${a.limitation_notice}`);
   return lines.join("\n");
 }
 

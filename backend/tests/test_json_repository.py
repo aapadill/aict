@@ -12,6 +12,7 @@ def test_initialize_creates_state_files_and_directories(tmp_path) -> None:
     assert repo.documents_path.exists()
     assert repo.chunks_dir.is_dir()
     assert repo.analyses_dir.is_dir()
+    assert repo.active_analyses_dir.is_dir()
     assert repo.messages_dir.is_dir()
     assert repo.evidence_dir.is_dir()
     assert repo.upload_dir.is_dir()

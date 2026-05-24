@@ -70,4 +70,4 @@ make health
 make test-backend
 ```
 
-Use manual backend/frontend commands only when debugging a specific service. The backend package source of truth is `backend/pyproject.toml`; do not reintroduce a root-level or backend `requirements.txt` workflow unless explicitly requested.
+Use manual backend/frontend commands only when debugging a specific service. The backend package source of truth is `backend/pyproject.toml`; do not reintroduce a root-level or backend `requirements.txt` workflow unless explicitly requested. The frontend package source of truth is `frontend/package.json`; do not add Three.js, React Three Fiber, Playwright, Supabase, auth packages, or frontend database libraries unless explicitly requested.

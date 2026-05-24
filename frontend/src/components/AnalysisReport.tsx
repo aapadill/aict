@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import type { AnalysisResult, AssessmentSection, Citation, ExtractedFact } from "../types/api";
-import EvidencePanel, { CitationItem } from "./EvidencePanel";
-import AgentTrace from "./AgentTrace";
+import { CitationItem } from "./EvidencePanel";
 
 function DropdownPanel({
   title,
@@ -200,9 +199,11 @@ function riskLabel(conclusion: string): string {
 export default function AnalysisReport({
   a,
   onOpenChat,
+  readOnly = false,
 }: {
   a: AnalysisResult;
   onOpenChat: () => void;
+  readOnly?: boolean;
 }) {
   const tone = riskTone(a.risk_classification.conclusion);
   const label = riskLabel(a.risk_classification.conclusion);
@@ -235,18 +236,18 @@ export default function AnalysisReport({
           <p>{a.risk_classification.reasoning}</p>
         </div>
         <div className="risk-summary-footer">
-          <button className="primary compact" onClick={onOpenChat}>
-            Ask about this in the chat
-          </button>
+          {readOnly ? (
+            <span className="badge uploaded">saved snapshot</span>
+          ) : (
+            <button className="primary compact" onClick={onOpenChat}>
+              Ask about this in the chat
+            </button>
+          )}
           <span className={`badge ${a.risk_classification.confidence}`}>
             {a.risk_classification.confidence} certainty
           </span>
         </div>
       </section>
-
-      <div className="notice">
-        <strong>Limitation:</strong> {a.limitation_notice}
-      </div>
 
       <div className="report-overview">
         <section className="panel summary-panel">
@@ -351,55 +352,6 @@ export default function AnalysisReport({
         )}
       </DropdownPanel>
 
-      <DropdownPanel
-        title="Missing information"
-        meta={`${a.missing_information.length} item${a.missing_information.length === 1 ? "" : "s"}`}
-      >
-        {a.missing_information.length === 0 ? (
-          <div className="muted small">None.</div>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {a.missing_information.map((m, i) => <li key={i}>{m}</li>)}
-          </ul>
-        )}
-      </DropdownPanel>
-
-      <DropdownPanel
-        title="Evidence & citations"
-        meta={`${a.citations.length} cited source${a.citations.length === 1 ? "" : "s"}`}
-      >
-        <EvidencePanel citations={a.citations} />
-      </DropdownPanel>
-
-      <DropdownPanel
-        title="Agent trace"
-        meta={`${a.agent_trace.length} event${a.agent_trace.length === 1 ? "" : "s"}`}
-      >
-        <AgentTrace events={a.agent_trace} />
-      </DropdownPanel>
-
-      <DropdownPanel
-        title="Follow-up questions"
-        meta={`${a.follow_up_questions.length} question${a.follow_up_questions.length === 1 ? "" : "s"}`}
-      >
-        {a.follow_up_questions.length === 0 ? (
-          <div className="muted small">None.</div>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {a.follow_up_questions.map((q, i) => <li key={i}>{q}</li>)}
-          </ul>
-        )}
-      </DropdownPanel>
-
-      <div className="panel report-chat-cta">
-        <div>
-          <h2>Continue in chat</h2>
-          <p>Ask a follow-up question, challenge the classification, or add new facts for reassessment.</p>
-        </div>
-        <button className="primary" onClick={onOpenChat}>
-          Open chat
-        </button>
-      </div>
     </div>
   );
 }

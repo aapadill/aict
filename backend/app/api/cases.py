@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.agents.workflow import AnalysisWorkflowError, latest_analysis_result, run_analysis_workflow
-from app.models.analysis import AnalysisResult, Citation
+from app.models.analysis import LIMITATION_NOTICE, AnalysisResult, Citation
 from app.services.chat import ChatWorkflowError, answer_follow_up
-from app.storage import Case, Document, JsonRepository, Message, repository
+from app.storage import Analysis, Case, Document, JsonRepository, Message, repository
 
 ALLOWED_UPLOAD_EXTENSIONS = {".md", ".pdf", ".txt"}
 
@@ -70,6 +70,20 @@ class MessageResponse(BaseModel):
     created_at: str
 
 
+class AnalysisRevisionResponse(BaseModel):
+    id: str
+    case_id: str
+    status: str
+    created_at: str
+    updated_at: str
+    revision: int
+    active: bool
+    summary: str
+    risk_label: str
+    risk_conclusion: str
+    confidence: str
+
+
 def get_repository() -> JsonRepository:
     return repository
 
@@ -113,6 +127,55 @@ def _message_response(message: Message) -> MessageResponse:
         content=message.content,
         citations=[Citation.model_validate(citation) for citation in message.citations],
         created_at=message.createdat,
+    )
+
+
+def _analysis_result(analysis: Analysis) -> AnalysisResult:
+    result = AnalysisResult.model_validate(analysis.result)
+    return result.model_copy(update={"limitation_notice": LIMITATION_NOTICE})
+
+
+def _risk_label(conclusion: str) -> str:
+    text = conclusion.lower()
+    if "prohibited" in text:
+        return "Prohibited"
+    if "high-risk" in text or "high risk" in text:
+        return "High risk"
+    if "limited" in text or "transparency" in text:
+        return "Limited risk"
+    if "minimal" in text or "low" in text:
+        return "Low risk"
+    return "Needs review"
+
+
+def _analysis_revision_response(
+    analysis: Analysis,
+    *,
+    revision: int,
+    active_analysis_id: str | None,
+) -> AnalysisRevisionResponse:
+    try:
+        result = _analysis_result(analysis)
+        summary = result.summary
+        risk_conclusion = result.risk_classification.conclusion
+        confidence = result.risk_classification.confidence
+    except Exception:
+        summary = ""
+        risk_conclusion = ""
+        confidence = "unknown"
+
+    return AnalysisRevisionResponse(
+        id=analysis.id,
+        case_id=analysis.caseid,
+        status=analysis.status,
+        created_at=analysis.createdat,
+        updated_at=analysis.updated_at,
+        revision=revision,
+        active=analysis.id == active_analysis_id,
+        summary=summary,
+        risk_label=_risk_label(risk_conclusion),
+        risk_conclusion=risk_conclusion,
+        confidence=confidence,
     )
 
 
@@ -329,6 +392,27 @@ def list_case_documents(
     return [_document_response(document) for document in repo.list_documents(case_id)]
 
 
+@router.delete("/{case_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case_document(
+    case_id: str,
+    document_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> None:
+    _require_case(repo, case_id)
+    if repo.get_latest_analysis(case_id) is not None:
+        raise _api_error(
+            status.HTTP_409_CONFLICT,
+            "case_locked",
+            "Unlock the case before removing documents.",
+        )
+    if not repo.delete_document(case_id, document_id):
+        raise _api_error(
+            status.HTTP_404_NOT_FOUND,
+            "document_not_found",
+            f"Document '{document_id}' was not found for case '{case_id}'.",
+        )
+
+
 @router.post("/{case_id}/analyze", response_model=AnalysisResult)
 def analyze_case(
     case_id: str,
@@ -364,6 +448,49 @@ def get_case_analysis(
             f"No saved analysis exists for case '{case_id}'.",
         )
     return result
+
+
+@router.get("/{case_id}/analyses", response_model=list[AnalysisRevisionResponse])
+def list_case_analyses(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> list[AnalysisRevisionResponse]:
+    _require_case(repo, case_id)
+    active_analysis_id = repo.get_active_analysis_id(case_id)
+    return [
+        _analysis_revision_response(
+            analysis,
+            revision=index,
+            active_analysis_id=active_analysis_id,
+        )
+        for index, analysis in enumerate(repo.list_analyses(case_id), start=1)
+    ]
+
+
+@router.get("/{case_id}/analyses/{analysis_id}", response_model=AnalysisResult)
+def get_case_analysis_revision(
+    case_id: str,
+    analysis_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> AnalysisResult:
+    _require_case(repo, case_id)
+    analysis = repo.get_analysis(case_id, analysis_id)
+    if analysis is None:
+        raise _api_error(
+            status.HTTP_404_NOT_FOUND,
+            "analysis_not_found",
+            f"Analysis revision '{analysis_id}' was not found for case '{case_id}'.",
+        )
+    return _analysis_result(analysis)
+
+
+@router.delete("/{case_id}/analysis", status_code=status.HTTP_204_NO_CONTENT)
+def unlock_case_analysis(
+    case_id: str,
+    repo: JsonRepository = Depends(get_repository),
+) -> None:
+    _require_case(repo, case_id)
+    repo.clear_analysis_state(case_id)
 
 
 @router.post("/{case_id}/chat", response_model=ChatResponse)

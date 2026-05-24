@@ -433,8 +433,7 @@ export const mockAnalysis = (caseId: string): AnalysisResult => ({
         "Surfaced 6 missing-information items and 5 follow-up questions for the user.",
     },
   ],
-  limitation_notice:
-    "This is an automated decision-support draft based only on the uploaded documents and the built-in EU AI Act corpus. It is not legal advice and does not cover GDPR, national implementations of the AI Act, or sector-specific financial-services rules (e.g. CRD/CCD) except where flagged.",
+  limitation_notice: "",
 });
 
 export const mockMessages: Record<string, ChatMessage[]> = {};

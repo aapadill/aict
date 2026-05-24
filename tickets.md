@@ -2,6 +2,8 @@
 
 These tickets are written so each one can be pasted into a coding agent as a standalone implementation prompt. Backend/local integration work is timeboxed for the hackathon; the frontend was consolidated into one external Lovable prompt and is now expected to live in the repo as `frontend/`.
 
+Current implementation note: the live repo has moved beyond the original ticket prompts. The current UI includes a home landing page, cases board, locked analysis workflow, document deletion before analysis, report timeline/history, and read-only historical snapshots. Current dependency sources of truth are `backend/pyproject.toml` and `frontend/package.json`; the frontend does not require Three.js, React Three Fiber, Playwright, Supabase, auth packages, or a frontend database.
+
 ## Global Build Assumptions
 
 - Product: aict, an EU AI Act compliance workspace, for one AI use case per session.
@@ -12,6 +14,7 @@ These tickets are written so each one can be pasted into a coding agent as a sta
 - Suggested agent style: stateful graph or orchestrator with named agents and shared JSON state.
 - Suggested runtime: Docker Compose from the repo root, with `make up` as the default demo command and manual backend/frontend commands reserved for debugging.
 - Backend packaging: `backend/pyproject.toml`; install locally with `pip install -e ".[dev]"` when not using Docker.
+- Frontend packaging: `frontend/package.json`; install locally with `npm install` when not using Docker.
 - Citation rule: agents may interpret evidence, but they may not invent citations. Citation objects must come from stored source chunks and pass deterministic verification before results are saved or returned.
 - Required limitation text: "This is a decision-support draft, not final legal advice."
 - Keep the MVP local-first. Do not add auth, payments, cloud deployment, or multi-tenant complexity.
@@ -198,6 +201,7 @@ Implement local persistence for the aict backend. Use a simple JSON repository f
 - Store state under:
   - `backend/data/state/cases.json`
   - `backend/data/state/documents.json`
+  - `backend/data/state/active_analyses/{case_id}.json`
   - `backend/data/state/chunks/{case_id}.json`
   - `backend/data/state/analyses/{case_id}.json`
   - `backend/data/state/messages/{case_id}.json`
@@ -207,6 +211,7 @@ Implement local persistence for the aict backend. Use a simple JSON repository f
   - document: id, case_id, filename, content_type, file_path, status, extracted_text_path, created_at
   - chunk: id, case_id, source_id, source_type, source_title, document_id, location, text, normalized_text_hash, metadata, created_at
   - analysis: id, case_id, status, result, created_at, updated_at
+  - active analysis marker: case_id file containing the active analysis id or `null`
   - message: id, case_id, role, content, citations, created_at
   - evidence: id, case_id, source_type, source_title, document_id, location, snippet, metadata
 - The `chunks/{case_id}.json` files are the source of truth for uploaded-document citations. Built-in corpus chunks are the source of truth for regulatory citations. Final citations must point to real chunk IDs stored in one of those sources.
@@ -216,7 +221,7 @@ Implement local persistence for the aict backend. Use a simple JSON repository f
   - `backend/data/uploads/`
   - `backend/data/extracted/`
   - `backend/data/index/`
-- Add repository/helper functions for create/list/get cases, create/list documents, save/list/get chunks, save/get latest analysis, save/list messages, and save/list evidence.
+- Add repository/helper functions for create/list/get cases, create/list documents, save/list/get chunks, save/list/get/latest/list analyses, active-analysis marker handling, save/list messages, and save/list evidence.
 
 ## API Contract Support
 
@@ -232,7 +237,10 @@ save_chunk(case_id: str, chunk: dict) -> Chunk
 get_chunk(chunk_id: str, case_id: str | None = None) -> Chunk | None
 list_chunks(case_id: str) -> list[Chunk]
 save_analysis(case_id: str, result: dict, status: str = "complete") -> Analysis
+list_analyses(case_id: str) -> list[Analysis]
+get_analysis(case_id: str, analysis_id: str) -> Analysis | None
 get_latest_analysis(case_id: str) -> Analysis | None
+get_active_analysis_id(case_id: str) -> str | None
 save_message(case_id: str, role: str, content: str, citations: list[dict]) -> Message
 ```
 
@@ -650,17 +658,23 @@ return AnalysisResult
 - Implement endpoint:
   - `POST /cases/{case_id}/analyze`
   - `GET /cases/{case_id}/analysis`
+  - `GET /cases/{case_id}/analyses`
+  - `GET /cases/{case_id}/analyses/{analysis_id}`
+  - `DELETE /cases/{case_id}/analysis`
 - `POST /analyze` should:
   - return 404 if case does not exist
   - return useful error if no documents are uploaded
-  - persist analysis status/result
+  - persist analysis status/result and mark it as the active analysis
   - return the full `AnalysisResult`
-- `GET /analysis` should return the latest saved analysis or 404 if none exists.
+- `GET /analysis` should return the active saved analysis or 404 if none exists.
+- `GET /analyses` should return report-history summaries.
+- `DELETE /analysis` should clear the active analysis state for unlock/edit flows without deleting historical report snapshots.
 
 ## Acceptance Criteria
 
 - [ ] `POST /cases/{case_id}/analyze` runs the full workflow
-- [ ] `GET /cases/{case_id}/analysis` returns latest result
+- [ ] `GET /cases/{case_id}/analysis` returns active result
+- [ ] Report history endpoints expose saved revisions and active status
 - [ ] Critic flags missing information, uncertainty, weak evidence, and overconfidence
 - [ ] Follow-up questions are generated
 - [ ] Analysis result is saved and matches the shared schema
@@ -695,7 +709,7 @@ Important constraints:
 - The repo-level Docker flow will run this app through `frontend/Dockerfile` and `docker-compose.yml`, so keep the app compatible with `npm ci` and `npm run dev -- --host 0.0.0.0`.
 - Include `package.json`, `src/`, `index.html`, Vite config, TypeScript config, and `.env.example`.
 - Use mock data only as a fallback when the backend is unavailable. The real path must call the API contracts below.
-- The first screen should be the usable app workspace, not a marketing landing page.
+- Current implementation note: the app now has a lightweight home landing page and a Board button that opens the usable cases board.
 - The UI should feel like a serious compliance review tool: compact, structured, readable, and work-focused.
 - Include the visible limitation text: "This is a decision-support draft, not final legal advice."
 
@@ -703,16 +717,17 @@ What the frontend must do:
 
 1. Case dashboard
    - Show existing cases from `GET /cases`.
-   - Let the user create a case with title and optional description using `POST /cases`.
+   - Let the user create a blank case using `POST /cases`, then edit the use-case description in the case workspace before analysis.
    - Let the user open a case workspace.
 
 2. Case workspace
-   - Show case title, description, documents, analysis status, and action buttons.
+   - Show case title, saved description, documents, analysis status, report timeline, and action buttons.
    - Let the user upload multiple files using `POST /cases/{case_id}/documents`.
    - Supported file types in the UI: PDF, TXT, Markdown.
    - Show uploaded document names and statuses.
    - Provide a clear "Run analysis" button that calls `POST /cases/{case_id}/analyze`.
-   - Load latest analysis from `GET /cases/{case_id}/analysis`.
+   - Load latest active analysis from `GET /cases/{case_id}/analysis`.
+   - Load report history from `GET /cases/{case_id}/analyses` and individual snapshots from `GET /cases/{case_id}/analyses/{analysis_id}`.
 
 3. Assessment report
    - Render the structured `AnalysisResult` returned by the backend.
